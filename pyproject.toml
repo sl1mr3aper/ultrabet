@@ -1,0 +1,68 @@
+[project]
+name = "ultrabet-bot"
+version = "0.1.0"
+description = "Universal Telegram football predictions bot powered by SStats.net API (Glicko-2 + Poisson + value bets, referrals, subscriptions)"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+exclude = [
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    "data",
+    "logs",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM", "RUF"]
+ignore = [
+    "E501",
+    "B008",
+    "B904",
+    "E741",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "RUF012",
+    "RUF046",
+    "UP042",
+    "SIM102",
+    "SIM105",
+    "SIM108",
+    "SIM115",
+    "F841",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["api", "bot", "core", "db", "services", "utils"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_redundant_casts = true
+strict_optional = true
+no_implicit_optional = true
+check_untyped_defs = true
+exclude = [
+    "tests/",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+
+[tool.coverage.run]
+source = ["api", "bot", "core", "db", "services", "utils"]
+omit = ["tests/*"]
