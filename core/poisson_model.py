@@ -46,7 +46,7 @@ def poisson_match_probs(home_xg: float, away_xg: float) -> tuple[float, float, f
 def over_under_probabilities(
     home_xg: float,
     away_xg: float,
-    thresholds: tuple[float, ...] = (1.5, 2.5, 3.5, 4.5),
+    thresholds: tuple[float, ...] = (0.5, 1.5, 2.5, 3.5, 4.5, 5.5),
 ) -> dict[float, tuple[float, float]]:
     matrix = correct_score_distribution(home_xg, away_xg)
     n = len(matrix)
@@ -70,8 +70,8 @@ def over_under_probabilities(
 def team_total_probabilities(
     home_xg: float,
     away_xg: float,
-    home_thresholds: tuple[float, ...] = (0.5, 1.5),
-    away_thresholds: tuple[float, ...] = (0.5, 1.5),
+    home_thresholds: tuple[float, ...] = (0.5, 1.5, 2.5),
+    away_thresholds: tuple[float, ...] = (0.5, 1.5, 2.5),
 ) -> dict[str, dict[float, tuple[float, float]]]:
     home_xg = max(home_xg, 0.05)
     away_xg = max(away_xg, 0.05)
@@ -100,17 +100,25 @@ def btts_probabilities(home_xg: float, away_xg: float) -> tuple[float, float]:
 
 
 def handicap_probabilities(matrix: list[list[float]]) -> dict[str, float]:
-    """Форы ±1.5."""
+    """Азиатские форы ±1.5 и ±2.5."""
     n = len(matrix)
     home_minus_15 = sum(matrix[i][j] for i in range(n) for j in range(n) if i - j > 1)
     home_plus_15 = sum(matrix[i][j] for i in range(n) for j in range(n) if i - j > -2)
     away_minus_15 = sum(matrix[i][j] for i in range(n) for j in range(n) if j - i > 1)
     away_plus_15 = sum(matrix[i][j] for i in range(n) for j in range(n) if j - i > -2)
+    home_minus_25 = sum(matrix[i][j] for i in range(n) for j in range(n) if i - j > 2)
+    home_plus_25 = sum(matrix[i][j] for i in range(n) for j in range(n) if i - j > -3)
+    away_minus_25 = sum(matrix[i][j] for i in range(n) for j in range(n) if j - i > 2)
+    away_plus_25 = sum(matrix[i][j] for i in range(n) for j in range(n) if j - i > -3)
     return {
         "home_+1.5": min(max(home_plus_15, 0.0), 1.0),
         "home_-1.5": min(max(home_minus_15, 0.0), 1.0),
         "away_+1.5": min(max(away_plus_15, 0.0), 1.0),
         "away_-1.5": min(max(away_minus_15, 0.0), 1.0),
+        "home_+2.5": min(max(home_plus_25, 0.0), 1.0),
+        "home_-2.5": min(max(home_minus_25, 0.0), 1.0),
+        "away_+2.5": min(max(away_plus_25, 0.0), 1.0),
+        "away_-2.5": min(max(away_minus_25, 0.0), 1.0),
     }
 
 

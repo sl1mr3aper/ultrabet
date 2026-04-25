@@ -77,6 +77,11 @@ def build_predictions(
     btts_yes, btts_no = btts_probabilities(home_xg, away_xg)
     team_totals = team_total_probabilities(home_xg, away_xg)
 
+    # Draw No Bet — нормируем без ничьей
+    dnb_norm = max(p_home + p_away, 1e-9)
+    dnb_home = p_home / dnb_norm
+    dnb_away = p_away / dnb_norm
+
     probabilities: dict[str, float] = {
         MarketKey.HOME: p_home,
         MarketKey.DRAW: p_draw,
@@ -84,8 +89,12 @@ def build_predictions(
         MarketKey.DOUBLE_1X: min(p_home + p_draw, 0.999),
         MarketKey.DOUBLE_X2: min(p_draw + p_away, 0.999),
         MarketKey.DOUBLE_12: min(p_home + p_away, 0.999),
+        MarketKey.DNB_HOME: dnb_home,
+        MarketKey.DNB_AWAY: dnb_away,
         MarketKey.BTTS_YES: btts_yes,
         MarketKey.BTTS_NO: btts_no,
+        MarketKey.OVER_05: over_under.get(0.5, (0.0, 0.0))[0],
+        MarketKey.UNDER_05: over_under.get(0.5, (0.0, 0.0))[1],
         MarketKey.OVER_15: over_under.get(1.5, (0.0, 0.0))[0],
         MarketKey.UNDER_15: over_under.get(1.5, (0.0, 0.0))[1],
         MarketKey.OVER_25: over_under.get(2.5, (0.0, 0.0))[0],
@@ -94,16 +103,28 @@ def build_predictions(
         MarketKey.UNDER_35: over_under.get(3.5, (0.0, 0.0))[1],
         MarketKey.OVER_45: over_under.get(4.5, (0.0, 0.0))[0],
         MarketKey.UNDER_45: over_under.get(4.5, (0.0, 0.0))[1],
+        MarketKey.OVER_55: over_under.get(5.5, (0.0, 0.0))[0],
+        MarketKey.UNDER_55: over_under.get(5.5, (0.0, 0.0))[1],
         MarketKey.HOME_OVER_05: team_totals["home"].get(0.5, (0.0, 0.0))[0],
+        MarketKey.HOME_UNDER_05: team_totals["home"].get(0.5, (0.0, 0.0))[1],
         MarketKey.HOME_OVER_15: team_totals["home"].get(1.5, (0.0, 0.0))[0],
         MarketKey.HOME_UNDER_15: team_totals["home"].get(1.5, (0.0, 0.0))[1],
+        MarketKey.HOME_OVER_25: team_totals["home"].get(2.5, (0.0, 0.0))[0],
+        MarketKey.HOME_UNDER_25: team_totals["home"].get(2.5, (0.0, 0.0))[1],
         MarketKey.AWAY_OVER_05: team_totals["away"].get(0.5, (0.0, 0.0))[0],
+        MarketKey.AWAY_UNDER_05: team_totals["away"].get(0.5, (0.0, 0.0))[1],
         MarketKey.AWAY_OVER_15: team_totals["away"].get(1.5, (0.0, 0.0))[0],
         MarketKey.AWAY_UNDER_15: team_totals["away"].get(1.5, (0.0, 0.0))[1],
+        MarketKey.AWAY_OVER_25: team_totals["away"].get(2.5, (0.0, 0.0))[0],
+        MarketKey.AWAY_UNDER_25: team_totals["away"].get(2.5, (0.0, 0.0))[1],
         MarketKey.HANDICAP_HOME_PLUS_15: handicaps["home_+1.5"],
         MarketKey.HANDICAP_HOME_MINUS_15: handicaps["home_-1.5"],
         MarketKey.HANDICAP_AWAY_PLUS_15: handicaps["away_+1.5"],
         MarketKey.HANDICAP_AWAY_MINUS_15: handicaps["away_-1.5"],
+        MarketKey.HANDICAP_HOME_PLUS_25: handicaps["home_+2.5"],
+        MarketKey.HANDICAP_HOME_MINUS_25: handicaps["home_-2.5"],
+        MarketKey.HANDICAP_AWAY_PLUS_25: handicaps["away_+2.5"],
+        MarketKey.HANDICAP_AWAY_MINUS_25: handicaps["away_-2.5"],
     }
 
     return PredictionPayload(

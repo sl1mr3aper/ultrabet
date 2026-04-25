@@ -121,7 +121,6 @@ async def balance_command(message: Message, user: User, session: AsyncSession) -
     await message.answer(text, parse_mode="Markdown", reply_markup=main_menu_keyboard())
 
 
-@router.message()
+@router.message(F.text.regexp(r"^/\w+"))
 async def unknown_message(message: Message) -> None:
-    if message.text and message.text.startswith("/"):
-        await message.answer(UNKNOWN_COMMAND)
+    await message.answer(UNKNOWN_COMMAND)
