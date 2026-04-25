@@ -64,7 +64,7 @@ def test_format_prediction_contains_titles():
     assert "Real" in text and "Barca" in text
     assert "Glicko-2" in text
     assert "ТОП-15 ПРОГНОЗОВ" in text
-    assert "ТОП-5 ВАЛУЙНЫХ" in text
+    assert "ТОП ВАЛУЙНЫХ" in text
     assert "Бесплатных: *4*" in text
 
 

@@ -85,13 +85,23 @@ async def odds_cmd(message: Message) -> None:
     if not raw:
         await message.answer("Коэффициенты не найдены.", reply_markup=main_menu_keyboard())
         return
-    parsed = OddsParser().parse(raw)
+    parser = OddsParser()
+    parsed = parser.parse(raw)
+    best = parser.best_per_market(raw)
     if not parsed:
         await message.answer("Не удалось распарсить коэффициенты.")
         return
+    # Сортируем по убыванию коэф (а если есть наша вероятность из ансамбля,
+    # то по валуйности; здесь полагаемся на implied_prob = 1/odds).
+    rows = sorted(parsed.items(), key=lambda kv: kv[1], reverse=True)
     lines = ["💰 *Прематч-коэффициенты*", ""]
-    for market_key, val in sorted(parsed.items()):
-        lines.append(f"• `{market_key}` → {val:.2f}")
+    for market_key, val in rows[:60]:
+        b = best.get(market_key)
+        bk = f" — _{b[1]}_" if b else ""
+        implied = 1.0 / val if val > 0 else 0.0
+        lines.append(
+            f"• `{market_key}` → *{val:.2f}*{bk}  · implied {implied * 100:.1f}%"
+        )
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:3990] + "…"

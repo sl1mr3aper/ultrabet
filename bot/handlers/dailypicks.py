@@ -40,12 +40,31 @@ async def dailypicks_cmd(message: Message) -> None:
         await message.answer("Сегодня валуйных вариантов в базе не нашлось.",
                               reply_markup=main_menu_keyboard())
         return
-    lines = [f"🏆 *Топ-{len(picks)} валуйных ставок на {today}*", ""]
-    for i, p in enumerate(picks, start=1):
-        market_label = label_for(p.bet.market_key, home=p.result.home_name, away=p.result.away_name)
+    # Сортировка по убыванию валуйности — гарантия от любых будущих изменений
+    sorted_picks = sorted(picks, key=lambda p: p.bet.value_percent, reverse=True)
+    lines = [
+        f"🏆 *Топ-{len(sorted_picks)} валуйных ставок на {today}*",
+        "Формат: модель / fair-коэф / коэф букмекера = валуйность",
+        "",
+    ]
+    for i, p in enumerate(sorted_picks, start=1):
+        market_label = label_for(
+            p.bet.market_key, home=p.result.home_name, away=p.result.away_name
+        )
+        best = p.result.best_odds.get(p.bet.market_key) if p.result.best_odds else None
+        book = f" _{best[1]}_" if best else ""
+        emoji = (
+            "💎" if p.bet.value_percent >= 15 else
+            "🟢" if p.bet.value_percent >= 8 else
+            "✅"
+        )
         lines.append(
-            f"{i}. *{p.result.home_name} — {p.result.away_name}*\n"
-            f"   {market_label} | коэф {p.bet.actual_odds:.2f} | +{p.bet.value_percent:.2f}%"
+            f"{i}. {emoji} *{p.result.home_name} — {p.result.away_name}*\n"
+            f"   {market_label}\n"
+            f"   модель {p.bet.probability * 100:.1f}% · "
+            f"fair {p.bet.fair_odds:.2f} · "
+            f"букмекер{book} {p.bet.actual_odds:.2f} · "
+            f"*+{p.bet.value_percent:.2f}%*"
         )
     await message.answer(
         "\n".join(lines), parse_mode="Markdown",

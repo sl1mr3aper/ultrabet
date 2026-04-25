@@ -92,21 +92,68 @@ def format_prediction(
     parts.append(f"• Общий тотал → *{result.home_xg + result.away_xg:.2f}*")
 
     parts.append("")
-    parts.append("🏆 *ТОП-5 ВАЛУЙНЫХ ПРОГНОЗОВ*")
+    parts.append("🏆 *ТОП ВАЛУЙНЫХ ПРОГНОЗОВ* (по убыванию EV)")
+    parts.append("Формат: модель / fair-коэф / коэф букмекера = валуйность")
     if result.value_bets:
-        for idx, vb in enumerate(result.value_bets[:top_value], start=1):
+        # Сортируем убыванием value% — гарантия от любых будущих изменений в core
+        sorted_value = sorted(
+            result.value_bets[:top_value],
+            key=lambda b: b.value_percent,
+            reverse=True,
+        )
+        for idx, vb in enumerate(sorted_value, start=1):
             label = label_for(vb.market_key, home=home, away=away)
             best = result.best_odds.get(vb.market_key)
-            if best:
-                book_part = f" — _{best[1]}_ {best[0]:.2f}"
-            else:
-                book_part = ""
+            book_part = f" _{best[1]}_" if best else ""
+            value_emoji = (
+                "💎" if vb.value_percent >= 15 else
+                "🟢" if vb.value_percent >= 8 else
+                "✅" if vb.value_percent >= 3 else "·"
+            )
             parts.append(
-                f"{idx}. {label} (+{vb.value_percent:.2f}%) "
-                f"коэф {vb.actual_odds:.2f}{book_part}"
+                f"{idx}. {value_emoji} *{label}*\n"
+                f"    модель {vb.probability * 100:.1f}% · "
+                f"fair {vb.fair_odds:.2f} · "
+                f"букмекер{book_part} {vb.actual_odds:.2f} · "
+                f"*+{vb.value_percent:.2f}%*"
             )
     else:
         parts.append("— валуйных ставок не найдено по текущим коэффициентам")
+
+    # Показываем все рынки где есть и наша вероятность, и коэф букмекера,
+    # отсортированные по валуйности (по убыванию). Помогает увидеть полную картину.
+    parts.append("")
+    parts.append("📈 *СОПОСТАВЛЕНИЕ С КОТИРОВКАМИ* (топ по валуйности)")
+    triples: list[tuple[str, float, float, float]] = []
+    for market_key, prob in result.probabilities.items():
+        odds = result.odds_map.get(market_key)
+        if not odds or odds <= 1.0 or prob <= 0:
+            continue
+        value = (prob * odds - 1.0) * 100.0
+        triples.append((market_key, prob, odds, value))
+    triples.sort(key=lambda t: t[3], reverse=True)
+    if triples:
+        for market_key, prob, odds, value in triples[:8]:
+            label = label_for(market_key, home=home, away=away)
+            best = result.best_odds.get(market_key)
+            book_part = f" _{best[1]}_" if best else ""
+            sign = "+" if value >= 0 else ""
+            parts.append(
+                f"• {label}: {prob * 100:.1f}% · fair {1.0 / prob:.2f} · "
+                f"коэф{book_part} {odds:.2f} → {sign}{value:.2f}%"
+            )
+    else:
+        parts.append("— коэффициенты букмекеров не получены")
+
+    if result.accuracy_notes:
+        parts.append("")
+        parts.append("🧠 *Корректировки точности*")
+        for note in result.accuracy_notes[:6]:
+            parts.append(f"• {note}")
+
+    if result.injuries:
+        parts.append("")
+        parts.append(f"🚑 *Травмы и пропуски*: {len(result.injuries)} игроков")
 
     if result.summary_text:
         parts.append("")

@@ -7,6 +7,7 @@ from bot.handlers import (
     calculator,
     common,
     dailypicks,
+    extras,
     feedback,
     h2h,
     leagues,
@@ -37,6 +38,7 @@ def get_root_router() -> Router:
     router.include_router(topmatches.router)
     router.include_router(profile.router)
     router.include_router(calculator.router)
+    router.include_router(extras.router)
     router.include_router(subscription.router)
     router.include_router(referral.router)
     router.include_router(feedback.router)
