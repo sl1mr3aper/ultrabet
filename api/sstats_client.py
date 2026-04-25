@@ -584,35 +584,70 @@ class SStatsClient:
     # ── Composite helpers ───────────────────────────────────
 
     async def get_full_match_data(self, game_id: int | str) -> JSONDict:
-        """Параллельно собрать полный пакет данных для прогноза."""
-        async def _safe_injuries() -> list[JSONDict]:
-            if not str(game_id).isdigit():
-                return []
+        """Параллельно собрать ПОЛНЫЙ пакет данных по матчу для повышения точности.
+
+        Используются все доступные эндпоинты SStats:
+          /Games/{id}, /Games/glicko/{id}, /Odds/{id}, /Games/injuries,
+          /Games/last-games-stats, /Games/text-summary, /Games/profits,
+          /Games/season-table.
+        """
+        async def _safe(coro_factory, default):  # type: ignore[no-untyped-def]
             try:
-                return await self.get_injuries(int(game_id))
-            except Exception:
-                return []
+                return await coro_factory()
+            except Exception as exc:
+                logger.debug("partial fetch error: {}", exc)
+                return default
+
+        gid_int = int(game_id) if str(game_id).isdigit() else None
+
+        async def _injuries() -> list[JSONDict]:
+            return await self.get_injuries(gid_int) if gid_int is not None else []
+
+        async def _last_games() -> JSONDict | None:
+            return await self.get_last_games_stats(gid_int) if gid_int is not None else None
+
+        async def _summary() -> str | None:
+            return await self.get_text_summary(game_id)
+
+        async def _profits() -> JSONDict | None:
+            return (
+                await self.get_profits(gid_int, this_league=True, limit=25)
+                if gid_int is not None else None
+            )
 
         results = await asyncio.gather(
-            self.get_game(game_id),
-            self.get_glicko(game_id),
-            self.get_prematch_odds(game_id),
-            _safe_injuries(),
-            return_exceptions=True,
+            _safe(lambda: self.get_game(game_id), None),
+            _safe(lambda: self.get_glicko(game_id), None),
+            _safe(lambda: self.get_prematch_odds(game_id), []),
+            _safe(_injuries, []),
+            _safe(_last_games, None),
+            _safe(_summary, None),
+            _safe(_profits, None),
         )
-        game, glicko, odds, injuries = results
+        game, glicko, odds, injuries, last_games, summary_text, profits = results
 
-        def _safe(value: Any, default: Any) -> Any:
-            if isinstance(value, Exception):
-                logger.debug("partial fetch error: {}", value)
-                return default
-            return value
+        # Подгружаем сезонную таблицу, если есть season uid в game
+        season_table: JSONDict | None = None
+        try:
+            season_uid: str | None = None
+            if isinstance(game, dict):
+                season = game.get("season") or {}
+                if isinstance(season, dict):
+                    season_uid = season.get("uid") or season.get("id")
+            if season_uid:
+                season_table = await self.get_season_table(str(season_uid))
+        except Exception as exc:
+            logger.debug("season table fetch error: {}", exc)
 
         return {
-            "game": _safe(game, None),
-            "glicko": _safe(glicko, None),
-            "odds": _safe(odds, []),
-            "injuries": _safe(injuries, []),
+            "game": game,
+            "glicko": glicko,
+            "odds": odds,
+            "injuries": injuries,
+            "last_games": last_games,
+            "summary": summary_text,
+            "profits": profits,
+            "season_table": season_table,
         }
 
 

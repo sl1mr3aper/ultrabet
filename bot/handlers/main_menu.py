@@ -117,3 +117,20 @@ async def menu_help_btn(callback: CallbackQuery) -> None:
             HELP_TEXT, reply_markup=back_to_menu(), parse_mode="Markdown"
         )
     await callback.answer()
+
+
+@router.callback_query(F.data == "menu_main")
+async def menu_main_alias(callback: CallbackQuery, state: FSMContext) -> None:
+    """Алиас для пагинации: возвращает в главное меню."""
+    await state.clear()
+    if callback.message:
+        await callback.message.edit_text(
+            MAIN_MENU, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "noop")
+async def callback_noop(callback: CallbackQuery) -> None:
+    """Заглушка для индикатора страниц."""
+    await callback.answer()

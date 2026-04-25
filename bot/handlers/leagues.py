@@ -5,29 +5,92 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from api.sstats_client import SStatsClient
 from bot.formatters import format_league_table, format_match_list
-from bot.keyboards import league_view_keyboard, leagues_keyboard, main_menu_keyboard
+from bot.keyboards import league_view_keyboard, main_menu_keyboard
+from bot.pagination import (
+    Page,
+    format_paginated,
+    pagination_keyboard,
+    parse_pagination_callback,
+)
+from bot.styles import (
+    ICON_TROPHY,
+    bullet,
+    header,
+)
 from bot.texts import NO_MATCHES
 from config import Settings
-from services.countries import format_country
+from services.countries import country_flag, format_country
 
 router = Router(name="leagues")
+LEAGUES_PAGE_SIZE = 8
+
+
+def _leagues_keyboard_paginated(page: Page) -> InlineKeyboardBuilder:
+    builder = InlineKeyboardBuilder()
+    for league in page.slice():
+        if not isinstance(league, dict):
+            continue
+        league_id = league.get("id")
+        name = league.get("name") or "?"
+        country = (league.get("country") or {}) if isinstance(league.get("country"), dict) else {}
+        flag = country_flag(country.get("name") if isinstance(country, dict) else None)
+        builder.button(
+            text=f"{flag} {name}"[:60],
+            callback_data=f"league:{league_id}",
+        )
+    builder.adjust(1)
+    return builder
+
+
+async def _render_leagues_page(message_or_cb, page_index: int) -> None:
+    bot = (message_or_cb.message.bot if hasattr(message_or_cb, "message") else message_or_cb.bot)
+    sstats: SStatsClient = bot["sstats"]  # type: ignore[index]
+    leagues_raw = await sstats.list_leagues()
+    leagues = [l for l in (leagues_raw or []) if isinstance(l, dict) and l.get("id")]
+    page: Page = Page(items=leagues, page_index=page_index, page_size=LEAGUES_PAGE_SIZE)
+    text = format_paginated(
+        page,
+        render_item=lambda i, l: bullet(
+            f"{country_flag((l.get('country') or {}).get('name'))} {l.get('name') or '?'}"
+        ),
+        header_text=header("Лиги SStats", icon=ICON_TROPHY),
+        footer_text="Нажми кнопку с лигой ниже, чтобы открыть.",
+    )
+    builder = _leagues_keyboard_paginated(page)
+    pag_kb = pagination_keyboard("leagues_page", page).inline_keyboard
+    for row in pag_kb:
+        builder.row(*row)
+    target = message_or_cb.message if hasattr(message_or_cb, "message") else message_or_cb
+    if hasattr(target, "edit_text"):
+        try:
+            await target.edit_text(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+        except Exception:
+            await target.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    else:
+        await target.answer(text, reply_markup=builder.as_markup(), parse_mode="Markdown")
+    if hasattr(message_or_cb, "answer") and not isinstance(message_or_cb, Message):
+        await message_or_cb.answer()
 
 
 @router.callback_query(F.data == "menu:leagues")
 async def menu_leagues(callback: CallbackQuery) -> None:
     if callback.message:
-        sstats: SStatsClient = callback.message.bot["sstats"]  # type: ignore[index]
-        leagues_raw = await sstats.list_leagues()
-        leagues = leagues_raw[:30]
-        text = "🏆 *Лиги SStats*\nВыбери, чтобы увидеть матчи и таблицу:"
-        await callback.message.edit_text(
-            text,
-            reply_markup=leagues_keyboard(leagues),
-            parse_mode="Markdown",
-        )
+        await _render_leagues_page(callback, page_index=0)
+    else:
+        await callback.answer()
+
+
+@router.callback_query(F.data.startswith("leagues_page:"))
+async def leagues_page_cb(callback: CallbackQuery) -> None:
+    if not callback.data or not callback.message:
+        await callback.answer()
+        return
+    idx, _ = parse_pagination_callback(callback.data, "leagues_page")
+    await _render_leagues_page(callback, page_index=idx)
     await callback.answer()
 
 
