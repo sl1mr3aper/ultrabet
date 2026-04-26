@@ -1,68 +1,80 @@
-"""Тесты Kelly-калькулятора."""
+"""Тесты стейкинг-стратегий."""
 
 from __future__ import annotations
 
-import math
+import pytest
 
-from core.bankroll import (
-    break_even_probability,
-    expected_value_percent,
-    kelly_fraction,
-    recommend_stake,
-)
+from services.bankroll import StakeInput, StakeKind, compute_stake, describe
+
+
+def test_kelly_positive_ev():
+    si = StakeInput(
+        bankroll=1000, probability=0.6, odds=2.0, base_percent=1.0, max_fraction=1.0
+    )
+    st = compute_stake(si, StakeKind.KELLY)
+    # Kelly = (1*0.6 - 0.4)/1 = 0.2 → 200
+    assert abs(st - 200.0) < 1e-6
 
 
 def test_kelly_zero_when_no_edge():
-    # вероятность ровно соответствует справедливому коэффициенту
-    p = 0.5
-    odds = 2.0
-    assert kelly_fraction(p, odds) == 0.0
+    si = StakeInput(bankroll=1000, probability=0.5, odds=2.0)
+    st = compute_stake(si, StakeKind.KELLY)
+    assert st == 0.0
 
 
-def test_kelly_positive_with_edge():
-    p = 0.55
-    odds = 2.10
-    f = kelly_fraction(p, odds)
-    assert 0 < f < 1
+def test_half_kelly_half_of_kelly():
+    si = StakeInput(
+        bankroll=1000, probability=0.6, odds=2.0, max_fraction=1.0
+    )
+    k = compute_stake(si, StakeKind.KELLY)
+    hk = compute_stake(si, StakeKind.HALF_KELLY)
+    assert abs(hk - k / 2) < 1e-6
 
 
-def test_kelly_zero_when_negative_edge():
-    assert kelly_fraction(0.40, 2.10) == 0.0
+def test_flat_returns_base():
+    si = StakeInput(bankroll=1000, probability=0.6, odds=2.0, base_percent=2.0)
+    st = compute_stake(si, StakeKind.FLAT)
+    assert abs(st - 20.0) < 1e-6
 
 
-def test_kelly_at_extreme():
-    assert kelly_fraction(1.0, 2.0) == 1.0
-    assert kelly_fraction(0.0, 2.0) == 0.0
+def test_percent():
+    si = StakeInput(bankroll=500, probability=0.6, odds=2.0, base_percent=1.5)
+    st = compute_stake(si, StakeKind.PERCENT)
+    assert abs(st - 7.5) < 1e-6
 
 
-def test_kelly_invalid_odds():
-    assert kelly_fraction(0.6, 1.0) == 0.0
-    assert kelly_fraction(0.6, 0.5) == 0.0
+def test_martingale_doubles():
+    si_no_loss = StakeInput(bankroll=1000, probability=0.6, odds=2.0, base_percent=1.0, previous_losses=0)
+    si_loss3 = StakeInput(bankroll=1000, probability=0.6, odds=2.0, base_percent=1.0, previous_losses=3)
+    base = compute_stake(si_no_loss, StakeKind.MARTINGALE)
+    after3 = compute_stake(si_loss3, StakeKind.MARTINGALE)
+    # 2^3 = 8x base, но капится на max_fraction=10%
+    assert after3 >= base
+    assert after3 <= si_loss3.bankroll * si_loss3.max_fraction + 1e-6
 
 
-def test_break_even_basic():
-    assert break_even_probability(2.0) == 0.5
-    assert math.isclose(break_even_probability(4.0), 0.25)
-    assert break_even_probability(1.0) == 1.0
+def test_anti_martingale_doubles_on_wins():
+    si = StakeInput(bankroll=1000, probability=0.6, odds=2.0, base_percent=1.0, previous_wins=2)
+    st = compute_stake(si, StakeKind.ANTI_MARTINGALE)
+    # 2^2 = 4x = 4% of 1000 = 40
+    assert abs(st - 40.0) < 1e-6
 
 
-def test_expected_value_correct_sign():
-    assert expected_value_percent(0.55, 2.10) > 0
-    assert expected_value_percent(0.40, 2.10) < 0
+def test_zero_bankroll():
+    si = StakeInput(bankroll=0, probability=0.6, odds=2.0)
+    for k in StakeKind:
+        assert compute_stake(si, k) == 0.0
 
 
-def test_recommendation_stake_amounts():
-    rec = recommend_stake(0.55, 2.10)
-    bankroll = 1000.0
-    assert rec.stake_full(bankroll) > rec.stake_half(bankroll) > rec.stake_quarter(bankroll)
+def test_max_fraction_caps():
+    si = StakeInput(
+        bankroll=1000, probability=0.99, odds=10.0, base_percent=1.0, max_fraction=0.10
+    )
+    st = compute_stake(si, StakeKind.KELLY)
+    assert st <= 100.0 + 1e-6
 
 
-def test_recommendation_flat_zero_when_negative():
-    rec = recommend_stake(0.40, 2.10)
-    assert rec.flat_fraction == 0.0
-    assert rec.stake_flat(1000.0) == 0.0
-
-
-def test_recommendation_flat_positive_when_positive_ev():
-    rec = recommend_stake(0.60, 2.20)
-    assert rec.flat_fraction > 0
+@pytest.mark.parametrize("kind", list(StakeKind))
+def test_describe_all(kind):
+    assert isinstance(describe(kind), str)
+    assert len(describe(kind)) > 10

@@ -103,7 +103,7 @@ class ThrottlingMiddleware(BaseMiddleware):
 
 
 class ErrorMiddleware(BaseMiddleware):
-    """Глобальный перехват исключений."""
+    """Глобальный перехват исключений с человеческими сообщениями."""
 
     async def __call__(
         self,
@@ -115,7 +115,14 @@ class ErrorMiddleware(BaseMiddleware):
             return await handler(event, data)
         except Exception as exc:
             logger.exception("Handler failed: {}", exc)
-            await _send_temp(event, ERROR_GENERIC)
+            # Пробуем показать дружелюбное сообщение по типу ошибки
+            try:
+                from services.error_translator import translate
+
+                translated = translate(exc)
+                await _send_temp(event, translated.user_message)
+            except Exception:
+                await _send_temp(event, ERROR_GENERIC)
             return None
 
 
