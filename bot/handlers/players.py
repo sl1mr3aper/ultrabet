@@ -6,6 +6,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from bot.context import services
 from bot.keyboards import main_menu_keyboard
 from services.countries import format_country
 from services.player_service import PlayerService
@@ -19,7 +20,7 @@ async def player_command(message: Message) -> None:
     if len(parts) < 2:
         await message.answer("Использование: /player Имя_игрока")
         return
-    sstats = message.bot["sstats"]  # type: ignore[index]
+    sstats = services.sstats
     service = PlayerService(sstats)
     found = await service.find(parts[1])
     if not found:

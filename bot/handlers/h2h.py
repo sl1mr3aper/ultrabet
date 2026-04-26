@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from api.sstats_client import SStatsClient
+from bot.context import services
 from bot.pagination import (
     Page,
     format_paginated,
@@ -98,7 +99,7 @@ async def h2h_command(message: Message) -> None:
         )
         return
     a, b = parts[0].strip(), parts[1].strip()
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     finder = MatchFinder(sstats)
     teams_a = await finder.search_teams(a, limit=1)
     teams_b = await finder.search_teams(b, limit=1)

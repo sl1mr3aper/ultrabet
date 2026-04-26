@@ -9,6 +9,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.context import services
 from bot.pagination import (
     Page,
     format_paginated,
@@ -55,8 +56,8 @@ async def _render_top(
     page_index: int,
 ) -> None:
     bot = target.message.bot if isinstance(target, CallbackQuery) else target.bot
-    settings: Settings = bot["settings"]  # type: ignore[index]
-    sstats = bot["sstats"]  # type: ignore[index]
+    settings: Settings = services.settings
+    sstats = services.sstats
     today = (
         datetime.now(tz=UTC) + timedelta(hours=settings.timezone_offset)
     ).strftime("%Y-%m-%d")

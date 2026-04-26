@@ -12,6 +12,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.sstats_client import SStatsClient
+from bot.context import services
 from bot.formatters import format_prediction
 from bot.keyboards import (
     countries_keyboard,
@@ -99,7 +100,7 @@ async def _process_query(message: Message, state: FSMContext, raw_query: str) ->
         return
 
     home_query, away_query = pair
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     finder = MatchFinder(sstats)
 
     home_results = await finder.search_teams(home_query, limit=25)
@@ -209,7 +210,7 @@ async def away_picked(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.edit_text("Что-то пошло не так. Попробуй заново /match.")
         await callback.answer()
         return
-    sstats: SStatsClient = callback.message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     finder = MatchFinder(sstats)
     cand = await finder.find_match_for_teams(home_team_id, away_team_id)
     if cand is None:
@@ -236,7 +237,7 @@ async def refresh_prediction(callback: CallbackQuery, state: FSMContext) -> None
         await callback.answer()
         return
     game_id = int(callback.data.rsplit(":", 1)[1])
-    sstats: SStatsClient = callback.message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     await sstats.cache.invalidate(prefix=f"odds:{game_id}")
     await sstats.cache.invalidate(prefix=f"glicko:{game_id}")
     await _run_prediction(callback.message, state, game_id, edit=True)
@@ -269,7 +270,7 @@ async def _select_pair_and_predict(
     home_team: dict[str, Any],
     away_team: dict[str, Any],
 ) -> None:
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     finder = MatchFinder(sstats)
     cand = await finder.find_match_for_teams(int(home_team.get("id")), int(away_team.get("id")))
     if cand is None:
@@ -290,9 +291,9 @@ async def _run_prediction(
     *,
     edit: bool = False,
 ) -> None:
-    settings: Settings = message.bot["settings"]  # type: ignore[index]
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
-    session: AsyncSession = message.bot["session_factory"]()  # type: ignore[index]
+    settings: Settings = services.settings
+    sstats: SStatsClient = services.sstats
+    session: AsyncSession = services.session_factory()
     user: User | None = None
 
     try:
@@ -385,7 +386,7 @@ async def _run_prediction(
         # Трекаем топ-3 валуйные ставки в in-memory аналитике,
         # чтобы /admin_analytics показывал hit-rate и ROI по реальным пикам
         try:
-            analytics = message.bot["analytics"]  # type: ignore[index]
+            analytics = services.analytics
         except KeyError:
             analytics = None
         if analytics is not None:

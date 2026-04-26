@@ -17,6 +17,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from api.sstats_client import SStatsClient
+from bot.context import services
 from bot.keyboards import main_menu_keyboard
 from bot.pagination import (
     Page,
@@ -68,7 +69,7 @@ async def summary_cmd(message: Message) -> None:
     if gid is None:
         await message.answer("Использование: /summary <game_id>")
         return
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     text = await sstats.get_text_summary(gid)
     if not text:
         await message.answer(
@@ -130,7 +131,7 @@ async def injuries_cmd(message: Message) -> None:
     if gid is None:
         await message.answer("Использование: /injuries <game_id>")
         return
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     rows = await sstats.get_injuries(gid)
     rows = [r for r in (rows or []) if isinstance(r, dict)]
     if message.from_user:
@@ -212,7 +213,7 @@ async def odds_cmd(message: Message) -> None:
     if gid is None:
         await message.answer("Использование: /odds <game_id>")
         return
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     raw = await sstats.get_prematch_odds(gid)
     if not raw:
         await message.answer(
@@ -299,7 +300,7 @@ async def _send_bookmakers_page(
 
 @router.message(Command("bookmakers"))
 async def bookmakers_cmd(message: Message) -> None:
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     rows = await sstats.list_bookmakers()
     rows = [r for r in (rows or []) if isinstance(r, dict)]
     if message.from_user:
@@ -375,7 +376,7 @@ async def standings_for_cmd(message: Message) -> None:
     except ValueError:
         await message.answer("league_id должен быть числом.")
         return
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     svc = LeagueService(sstats)
     table = await svc.standings(league_id)
     rows = []

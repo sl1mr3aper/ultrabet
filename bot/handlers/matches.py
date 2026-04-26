@@ -11,6 +11,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from api.sstats_client import SStatsClient
+from bot.context import services
 from bot.pagination import (
     Page,
     format_paginated,
@@ -83,7 +84,7 @@ def _matches_keyboard(page: Page, prefix: str, extra: str) -> InlineKeyboardBuil
 async def _fetch_matches(
     bot, *, kind: str, settings: Settings
 ) -> tuple[list[dict[str, Any]], str]:
-    sstats: SStatsClient = bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     if kind == "today":
         return (
             await sstats.list_games(
@@ -117,7 +118,7 @@ async def _render_matches_page(
     page_index: int,
 ) -> None:
     bot = target.message.bot if isinstance(target, CallbackQuery) else target.bot
-    settings: Settings = bot["settings"]  # type: ignore[index]
+    settings: Settings = services.settings
     games, hdr = await _fetch_matches(bot, kind=kind, settings=settings)
     games = [g for g in (games or []) if isinstance(g, dict)]
     icon = ICON_FIRE if kind == "live" else ICON_CALENDAR if kind == "today" else ICON_BALL

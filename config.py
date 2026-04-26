@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # ── Telegram ────────────────────────────────────────────
     bot_token: SecretStr = Field(..., description="Токен бота от @BotFather")
     bot_username: str = Field("ultrabet_predictions_bot")
-    admin_ids: list[int] = Field(default_factory=list)
+    admin_ids: str | list[int] = Field(default_factory=list)
     timezone_offset: int = Field(3, ge=-12, le=12)
 
     # ── SStats API ──────────────────────────────────────────

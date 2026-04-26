@@ -70,13 +70,16 @@ async def main() -> None:
         token=settings.bot_token_value,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
     )
-    bot["settings"] = settings  # type: ignore[index]
-    bot["sstats"] = sstats  # type: ignore[index]
-    bot["session_factory"] = database.session_factory  # type: ignore[index]
-    bot["analytics"] = AnalyticsService()  # type: ignore[index]
+    from bot.context import services as _services
+    _services.settings = settings
+    _services.sstats = sstats
+    _services.session_factory = database.session_factory
+    _services.analytics = AnalyticsService()
 
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher["settings"] = settings
+    dispatcher["sstats"] = sstats
+    dispatcher["session_factory"] = database.session_factory
 
     error_mw = ErrorMiddleware()
     db_mw = DbSessionMiddleware(database.session_factory)

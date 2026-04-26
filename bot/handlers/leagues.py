@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from api.sstats_client import SStatsClient
+from bot.context import services
 from bot.formatters import format_league_table, format_match_list
 from bot.keyboards import league_view_keyboard, main_menu_keyboard
 from bot.pagination import (
@@ -48,7 +49,7 @@ def _leagues_keyboard_paginated(page: Page) -> InlineKeyboardBuilder:
 
 async def _render_leagues_page(message_or_cb, page_index: int) -> None:
     bot = (message_or_cb.message.bot if hasattr(message_or_cb, "message") else message_or_cb.bot)
-    sstats: SStatsClient = bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     leagues_raw = await sstats.list_leagues()
     leagues = [l for l in (leagues_raw or []) if isinstance(l, dict) and l.get("id")]
     page: Page = Page(items=leagues, page_index=page_index, page_size=LEAGUES_PAGE_SIZE)
@@ -100,8 +101,8 @@ async def league_matches(callback: CallbackQuery) -> None:
         await callback.answer()
         return
     league_id = int(callback.data.rsplit(":", 1)[1])
-    settings: Settings = callback.message.bot["settings"]  # type: ignore[index]
-    sstats: SStatsClient = callback.message.bot["sstats"]  # type: ignore[index]
+    settings: Settings = services.settings
+    sstats: SStatsClient = services.sstats
     games = await sstats.list_games(
         league_id=league_id, upcoming=True, limit=20, time_zone=settings.timezone_offset
     )
@@ -121,7 +122,7 @@ async def league_table(callback: CallbackQuery) -> None:
         await callback.answer()
         return
     league_id = int(callback.data.rsplit(":", 1)[1])
-    sstats: SStatsClient = callback.message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     seasons = await sstats.ls_seasons(leagueId=league_id, limit=1)
     season_uid = seasons[0].get("uid") if seasons else None
     text = "Таблица недоступна." if not season_uid else format_league_table(
@@ -146,7 +147,7 @@ async def league_root(callback: CallbackQuery) -> None:
     except ValueError:
         await callback.answer()
         return
-    sstats: SStatsClient = callback.message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     leagues = await sstats.list_leagues()
     league = next((l for l in leagues if l.get("id") == league_id), None)
     if not league:
@@ -168,7 +169,7 @@ async def standings_command(message: Message) -> None:
     if len(parts) < 2:
         await message.answer("Использование: /standings Название_лиги")
         return
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
     needle = parts[1].lower().strip()
     leagues = await sstats.list_leagues()
     matched = [l for l in leagues if needle in (l.get("name") or "").lower()]
@@ -191,8 +192,8 @@ async def league_command(message: Message) -> None:
     if len(parts) < 2:
         await message.answer("Использование: /league Название")
         return
-    sstats: SStatsClient = message.bot["sstats"]  # type: ignore[index]
-    settings: Settings = message.bot["settings"]  # type: ignore[index]
+    sstats: SStatsClient = services.sstats
+    settings: Settings = services.settings
     needle = parts[1].lower().strip()
     leagues = await sstats.list_leagues()
     matched = [l for l in leagues if needle in (l.get("name") or "").lower()]

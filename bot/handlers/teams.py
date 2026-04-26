@@ -6,6 +6,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
+from bot.context import services
 from bot.formatters import format_match_list
 from bot.keyboards import main_menu_keyboard
 from config import Settings
@@ -21,8 +22,8 @@ async def team_command(message: Message) -> None:
     if len(parts) < 2:
         await message.answer("Использование: /team Название_команды")
         return
-    sstats = message.bot["sstats"]  # type: ignore[index]
-    settings: Settings = message.bot["settings"]  # type: ignore[index]
+    sstats = services.sstats
+    settings: Settings = services.settings
     service = TeamService(sstats)
     found = await service.search(parts[1])
     if not found:

@@ -10,6 +10,7 @@ from aiogram.types import Message
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.context import services
 from bot.keyboards import main_menu_keyboard
 from bot.texts import ADMIN_NOT_ALLOWED, ADMIN_PANEL
 from config import Settings
@@ -175,7 +176,7 @@ async def admin_analytics(
         await message.answer(ADMIN_NOT_ALLOWED)
         return
     try:
-        analytics = message.bot["analytics"]  # type: ignore[index]
+        analytics = services.analytics
     except KeyError:
         analytics = None
     if analytics is None:
