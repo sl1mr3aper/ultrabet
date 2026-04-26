@@ -51,6 +51,16 @@ async def start_with_deep_link(
                     ref_name=referrer.display_name(),
                     bonus=settings.referral_bonus_signup,
                 )
+                # Уведомление пригласителю
+                try:
+                    await message.bot.send_message(
+                        referrer.tg_id,
+                        f"🎉 По твоей ссылке зарегистрировался {user.display_name()}.\n"
+                        f"Ты получил *+{settings.referral_bonus_signup}* бонусных прогнозов.",
+                        parse_mode="Markdown",
+                    )
+                except Exception:
+                    pass
     await _send_welcome(message, user, bonus_text)
 
 

@@ -160,7 +160,18 @@ async def on_successful_payment(
             bonus_sub_12m=settings.referral_bonus_sub_12m,
         )
         try:
-            await ref.reward_for_subscription(referred=user, plan_code=plan.code)
+            reward = await ref.reward_for_subscription(referred=user, plan_code=plan.code)
+            if reward and reward.get("referrer_id"):
+                try:
+                    await message.bot.send_message(
+                        reward["referrer_id"],
+                        f"💰 {user.display_name()} оформил подписку "
+                        f"*{reward.get('plan_title', plan.code)}*.\n"
+                        f"Ты получил *+{reward['bonus']}* бонусных прогнозов.",
+                        parse_mode="Markdown",
+                    )
+                except Exception as exc2:
+                    logger.debug("notify referrer failed: {}", exc2)
         except Exception as exc:
             logger.warning("referral reward failed: {}", exc)
 
@@ -181,10 +192,13 @@ async def on_successful_payment(
 # ── Background task: истечение подписок ─────────────────────
 
 
-async def expire_subscriptions_loop(interval_seconds: int = 3600) -> None:
-    """Фоновая проверка экспирации каждые N секунд.
+async def expire_subscriptions_loop(
+    bot: object | None = None,
+    interval_seconds: int = 3600,
+) -> None:
+    """Фоновая проверка экспирации подписок каждые N секунд.
 
-    Снимает плейлейбл у истекших подписок и шлёт сообщение пользователю.
+    При истечении: снимает план/бейдж и шлёт пользователю сообщение.
     """
     while True:
         try:
@@ -192,21 +206,32 @@ async def expire_subscriptions_loop(interval_seconds: int = 3600) -> None:
             if factory is None:
                 await asyncio.sleep(interval_seconds)
                 continue
+            expired_tg_ids: list[tuple[int, str]] = []
             async with factory() as session:
                 repo = UserRepository(session)
                 expired = await repo.list_expired_subscriptions()
                 for u in expired:
+                    prev_plan = u.subscription_plan or ""
                     u.subscription_plan = None
                     u.subscription_until = None
                     u.subscription_daily_quota = 0
                     if hasattr(u, "badge"):
                         u.badge = ""
+                    expired_tg_ids.append((u.tg_id, prev_plan))
                 await session.commit()
-                # Шлём уведомления
-                # (бот для уведомлений должен быть доступен через services, в проде)
-                # здесь оставляем лог для отчёта
-                if expired:
-                    logger.info("Expired subscriptions: {}", len(expired))
+            if expired_tg_ids:
+                logger.info("Expired subscriptions: {}", len(expired_tg_ids))
+            if bot is not None:
+                for tg_id, prev_plan in expired_tg_ids:
+                    try:
+                        await bot.send_message(  # type: ignore[attr-defined]
+                            tg_id,
+                            f"⌛ Твоя подписка *{prev_plan}* истекла.\n"
+                            "Оформи новую в разделе 💎 Подписка, чтобы продолжить без ограничений.",
+                            parse_mode="Markdown",
+                        )
+                    except Exception as exc:
+                        logger.debug("expire notify failed for {}: {}", tg_id, exc)
         except Exception as exc:
             logger.warning("expire loop failed: {}", exc)
         await asyncio.sleep(interval_seconds)

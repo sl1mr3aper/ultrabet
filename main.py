@@ -116,7 +116,7 @@ async def main() -> None:
     logger.info("Long polling started")
 
     from bot.handlers.subscription import expire_subscriptions_loop
-    expire_task = asyncio.create_task(expire_subscriptions_loop(3600))
+    expire_task = asyncio.create_task(expire_subscriptions_loop(bot, 3600))
 
     polling_task = asyncio.create_task(dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types()))
     stop_task = asyncio.create_task(stop_event.wait())
