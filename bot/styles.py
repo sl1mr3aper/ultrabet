@@ -39,6 +39,11 @@ ICON_BELL = "🔔"
 ICON_INJURY = "🚑"
 ICON_TREND_UP = "📈"
 ICON_TREND_DOWN = "📉"
+ICON_SWORDS = "⚔️"
+ICON_TEAM = "🧑‍🤝‍🧑"
+ICON_PLAYER = "⚽"
+ICON_BOOK = "📖"
+ICON_BOOKMAKER = "🎰"
 
 
 def header(title: str, *, icon: str = ICON_BALL) -> str:
@@ -138,6 +143,8 @@ __all__ = [
     "ICON_BACK",
     "ICON_BALL",
     "ICON_BELL",
+    "ICON_BOOK",
+    "ICON_BOOKMAKER",
     "ICON_CALENDAR",
     "ICON_CHART",
     "ICON_CROWN",
@@ -153,10 +160,13 @@ __all__ = [
     "ICON_LOADING",
     "ICON_MONEY",
     "ICON_OK",
+    "ICON_PLAYER",
     "ICON_PROFILE",
     "ICON_SHIELD",
     "ICON_STAR",
+    "ICON_SWORDS",
     "ICON_TARGET",
+    "ICON_TEAM",
     "ICON_TREND_DOWN",
     "ICON_TREND_UP",
     "ICON_TROPHY",
