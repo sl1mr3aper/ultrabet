@@ -21,6 +21,7 @@ from bot.handlers import (
     profile,
     referral,
     settings,
+    simulate,
     strategy,
     subscription,
     teams,
@@ -51,6 +52,7 @@ def get_root_router() -> Router:
     router.include_router(feedback.router)
     router.include_router(settings.router)
     router.include_router(strategy.router)
+    router.include_router(simulate.router)
     router.include_router(admin.router)
     return router
 
