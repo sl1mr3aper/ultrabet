@@ -9,9 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from loguru import logger
+
 from api.sstats_client import SStatsClient
 from core.value_calculator import ValueBet, ValueCalculator
-from loguru import logger
 
 
 @dataclass(slots=True)

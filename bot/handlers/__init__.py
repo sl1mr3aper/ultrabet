@@ -4,6 +4,7 @@ from aiogram import Router
 
 from bot.handlers import (
     admin,
+    arb,
     bankroll,
     calculator,
     common,
@@ -14,6 +15,7 @@ from bot.handlers import (
     leagues,
     main_menu,
     matches,
+    parlay,
     players,
     predictions,
     profile,
@@ -41,6 +43,8 @@ def get_root_router() -> Router:
     router.include_router(profile.router)
     router.include_router(calculator.router)
     router.include_router(bankroll.router)
+    router.include_router(parlay.router)
+    router.include_router(arb.router)
     router.include_router(extras.router)
     router.include_router(subscription.router)
     router.include_router(referral.router)
