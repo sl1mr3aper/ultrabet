@@ -30,7 +30,7 @@ def _union_fieldnames(rows: list[dict[str, Any]]) -> list[str]:
     names: list[str] = []
     seen: set[str] = set()
     for r in rows:
-        for k in r.keys():
+        for k in r:
             if k not in seen:
                 seen.add(k)
                 names.append(k)
