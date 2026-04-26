@@ -116,10 +116,8 @@ def matches_keyboard(
 def prediction_actions_keyboard(game_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text=Buttons.REFRESH, callback_data=f"predict:refresh:{game_id}")
-    builder.button(text="📈 Best odds", callback_data=f"predict:best:{game_id}")
-    builder.button(text="🧮 Все рынки", callback_data=f"predict:all:{game_id}")
     builder.button(text=Buttons.BACK, callback_data="menu:home")
-    builder.adjust(2, 1, 1)
+    builder.adjust(2)
     return builder.as_markup()
 
 

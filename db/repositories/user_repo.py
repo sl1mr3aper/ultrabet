@@ -100,46 +100,94 @@ class UserRepository:
             "new_24h": int(new_today or 0),
         }
 
-    async def consume_quota(self, user: User, *, daily_quota_for_subs: int) -> bool:
-        """Списать одну единицу квоты прогноза. True — успех."""
-        now = datetime.now(tz=UTC)
-        if user.is_blocked:
-            return False
-
-        # сброс daily счётчика
+    def _reset_daily_if_needed(self, user: User, now: datetime) -> None:
         if user.daily_reset_at is None or _make_aware(user.daily_reset_at) <= now:
             user.daily_used = 0
             user.daily_reset_at = now + timedelta(hours=24)
 
-        sub_active = (
+    def _is_subscription_active(self, user: User, now: datetime) -> bool:
+        return (
             user.subscription_until is not None
             and _make_aware(user.subscription_until) > now
         )
+
+    async def check_quota(
+        self, user: User, *, subscription_daily_limit: int
+    ) -> tuple[bool, str]:
+        """Проверяем без списания, что пользователь может запросить прогноз.
+
+        Возврат: (allowed, source), где source ∈ {"sub", "free", ""}.
+        """
+        now = datetime.now(tz=UTC)
+        if user.is_blocked:
+            return False, ""
+        self._reset_daily_if_needed(user, now)
+        sub_active = self._is_subscription_active(user, now)
         if sub_active:
-            quota = user.subscription_daily_quota or daily_quota_for_subs
+            quota = min(
+                user.subscription_daily_quota or subscription_daily_limit,
+                subscription_daily_limit,
+            )
+            if user.daily_used < quota:
+                await self._session.flush()
+                return True, "sub"
+            # Подписка активна, но квота исчерпана — не разрешаем тратить фри
+            await self._session.flush()
+            return False, ""
+        if (user.free_predictions_left or 0) > 0:
+            await self._session.flush()
+            return True, "free"
+        await self._session.flush()
+        return False, ""
+
+    async def commit_quota(
+        self, user: User, *, subscription_daily_limit: int
+    ) -> str:
+        """Списать одну единицу квоты после успешного отчёта.
+
+        Приоритет: подписка → free (подписка сохраняет фри до экспирации).
+        Возвращает источник списания или "" если ничего не списано.
+        """
+        now = datetime.now(tz=UTC)
+        self._reset_daily_if_needed(user, now)
+        sub_active = self._is_subscription_active(user, now)
+        if sub_active:
+            quota = min(
+                user.subscription_daily_quota or subscription_daily_limit,
+                subscription_daily_limit,
+            )
             if user.daily_used < quota:
                 user.daily_used += 1
                 await self._session.flush()
-                return True
-
-        if (user.bonus_predictions or 0) > 0:
-            user.bonus_predictions -= 1
-            await self._session.flush()
-            return True
+                return "sub"
+            return ""
         if (user.free_predictions_left or 0) > 0:
             user.free_predictions_left -= 1
             await self._session.flush()
-            return True
+            return "free"
+        return ""
 
-        if sub_active:
+    # Обратная совместимость: синхронный ``consume_quota`` использовался старыми
+    # хендлерами; теперь просто делает check+commit атомарно.
+    async def consume_quota(
+        self,
+        user: User,
+        *,
+        daily_quota_for_subs: int = 40,
+        subscription_daily_limit: int | None = None,
+    ) -> bool:
+        limit = subscription_daily_limit or daily_quota_for_subs or 40
+        ok, _ = await self.check_quota(user, subscription_daily_limit=limit)
+        if not ok:
             return False
-        return False
+        return bool(await self.commit_quota(user, subscription_daily_limit=limit))
 
     async def add_bonus(self, user: User, amount: int) -> None:
-        if amount <= 0:
-            return
-        user.bonus_predictions = (user.bonus_predictions or 0) + amount
-        await self._session.flush()
+        """Deprecated: bonus predictions removed from product.
+
+        Оставлен как no-op для обратной совместимости с рефер-сервисом.
+        """
+        return
 
     async def set_blocked(self, user: User, blocked: bool) -> None:
         user.is_blocked = blocked

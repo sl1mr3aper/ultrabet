@@ -39,9 +39,11 @@ class Settings(BaseSettings):
 
     # ── Predictions ─────────────────────────────────────────
     top_predictions: int = Field(15, ge=1, le=50)
-    top_value_bets: int = Field(5, ge=1, le=20)
-    min_value_odds: float = Field(1.20, ge=1.01)
+    top_value_bets: int = Field(15, ge=1, le=30)
+    min_value_odds: float = Field(1.15, ge=1.01)
     min_value_percent: float = Field(2.0, ge=0.0)
+    min_value_probability: float = Field(0.90, ge=0.0, le=1.0)
+    subscription_daily_limit: int = Field(40, ge=1, le=200)
 
     # ── Cache TTL ───────────────────────────────────────────
     cache_ttl_teams: int = Field(3600)

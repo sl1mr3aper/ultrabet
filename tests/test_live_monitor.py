@@ -57,12 +57,13 @@ def test_detect_value():
         odds_map={"home": 3.0, "away": 5.0},
     )
     mon = LiveMonitor(
-        client=None, value_calculator=ValueCalculator(min_value_percent=2.0),
+        client=None,
+        value_calculator=ValueCalculator(min_value_percent=2.0, min_probability=0.90),
         min_value_pct=5.0,
     )
-    # Наша оценка home выше чем implied (1/3=33%). Давай 0.50 — EV = 50% * 3 = 1.5
-    bets = mon.detect_value(snap, {"home": 0.50, "away": 0.10})
-    # home: 0.50*3 - 1 = 0.5 → 50% value; away: 0.10*5 - 1 = -0.5 → skip
+    # home: p=0.95, кф=1.20 → 14% value (проходит фильтр p≥0.9, odds>1.15)
+    snap.odds_map = {"home": 1.20, "away": 5.0}
+    bets = mon.detect_value(snap, {"home": 0.95, "away": 0.10})
     assert len(bets) == 1
     assert bets[0].market_key == "home"
 

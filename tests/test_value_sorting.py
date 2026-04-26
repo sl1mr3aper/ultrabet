@@ -8,9 +8,10 @@ from core.value_calculator import ValueCalculator
 
 
 def test_find_top_value_sorted_desc():
-    calc = ValueCalculator(min_odds=1.20, min_value_percent=0.0)
-    probs = {"a": 0.55, "b": 0.40, "c": 0.30}
-    odds = {"a": 2.10, "b": 3.50, "c": 4.00}
+    # Используем высокие p, чтобы пройти новый фильтр (p ≥ 0.90)
+    calc = ValueCalculator(min_value_percent=0.0)
+    probs = {"a": 0.92, "b": 0.95, "c": 0.98}
+    odds = {"a": 1.20, "b": 1.25, "c": 1.30}
     out = calc.find_top_value(probs, odds, top_n=10)
     assert len(out) >= 1
     for prev, nxt in pairwise(out):

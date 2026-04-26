@@ -48,6 +48,10 @@ class PredictionResult:
     injuries: list[dict[str, Any]] = field(default_factory=list)
     accuracy_notes: list[str] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
+    is_finished: bool = False
+    home_score: int | None = None
+    away_score: int | None = None
+    status_code: int | None = None
 
 
 class PredictionService:
@@ -129,8 +133,44 @@ class PredictionService:
         odds_map = self._odds_parser.parse(odds_raw)
         best = self._odds_parser.best_per_market(odds_raw)
         value_bets = self._value.find_top_value(
-            prediction.probabilities, odds_map, top_n=20
+            prediction.probabilities, odds_map, top_n=15
         )
+
+        # Статус матча и счёт (если сыгран)
+        status_code = None
+        is_finished = False
+        home_score = None
+        away_score = None
+        status_raw = game_obj.get("status") if isinstance(game_obj, dict) else None
+        if isinstance(status_raw, int):
+            status_code = status_raw
+            # SStats: 100 = finished, 90+ обычно завершённые стадии
+            is_finished = status_raw >= 100
+        elif isinstance(status_raw, dict):
+            code = status_raw.get("code") or status_raw.get("id")
+            if isinstance(code, int):
+                status_code = code
+                is_finished = code >= 100
+        # Попробовать достать счёт
+        if isinstance(game_obj, dict):
+            for k_home, k_away in (
+                ("homeScore", "awayScore"),
+                ("homeGoals", "awayGoals"),
+                ("homeFT", "awayFT"),
+            ):
+                hv = game_obj.get(k_home)
+                av = game_obj.get(k_away)
+                if isinstance(hv, int) and isinstance(av, int):
+                    home_score, away_score = hv, av
+                    break
+            score_obj = game_obj.get("score")
+            if home_score is None and isinstance(score_obj, dict):
+                hv = score_obj.get("home") or score_obj.get("fullTimeHome")
+                av = score_obj.get("away") or score_obj.get("fullTimeAway")
+                if isinstance(hv, int) and isinstance(av, int):
+                    home_score, away_score = hv, av
+        if home_score is not None and away_score is not None:
+            is_finished = True
 
         season = game_obj.get("season") or {}
         league = season.get("league") if isinstance(season, dict) else {}
@@ -161,6 +201,10 @@ class PredictionService:
             profits=profits if isinstance(profits, dict) else None,
             injuries=list(injuries_raw) if isinstance(injuries_raw, list) else [],
             accuracy_notes=adjustments.notes,
+            is_finished=is_finished,
+            home_score=home_score,
+            away_score=away_score,
+            status_code=status_code,
         )
 
 

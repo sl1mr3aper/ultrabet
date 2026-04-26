@@ -40,31 +40,33 @@ class SubscriptionPlan:
         return base + timedelta(days=self.days)
 
 
+_DAILY_QUOTA = 40
+
 SUBSCRIPTION_PLANS: dict[str, SubscriptionPlan] = {
     PlanCode.DAY_1: SubscriptionPlan(
-        PlanCode.DAY_1, "1 день", 1, 10, 0,
+        PlanCode.DAY_1, "1 день", 1, _DAILY_QUOTA, 0,
         stars_price=50, badge="🎟",
-        description="Тест-драйв на сутки: 10 прогнозов в день.",
+        description="Тест-драйв на сутки: до 40 прогнозов.",
     ),
     PlanCode.WEEK_1: SubscriptionPlan(
-        PlanCode.WEEK_1, "1 неделя", 7, 15, 2,
+        PlanCode.WEEK_1, "1 неделя", 7, _DAILY_QUOTA, 2,
         stars_price=250, badge="🎫",
-        description="15 прогнозов в день + приоритетная очередь.",
+        description="До 40 прогнозов в день + приоритетная очередь.",
     ),
     PlanCode.MONTH_1: SubscriptionPlan(
-        PlanCode.MONTH_1, "1 месяц", 30, 30, 5,
+        PlanCode.MONTH_1, "1 месяц", 30, _DAILY_QUOTA, 5,
         stars_price=900, badge="💎",
-        description="30 прогнозов в день, разделы live-монитора и дневной дайджест.",
+        description="До 40 прогнозов в день + live-монитор и дайджест.",
     ),
     PlanCode.MONTH_3: SubscriptionPlan(
-        PlanCode.MONTH_3, "3 месяца", 90, 50, 15,
+        PlanCode.MONTH_3, "3 месяца", 90, _DAILY_QUOTA, 15,
         stars_price=2400, badge="🔥",
-        description="50 прогнозов в день + расширенная аналитика и экспорт.",
+        description="До 40 прогнозов в день + расширенная аналитика и экспорт.",
     ),
     PlanCode.MONTH_12: SubscriptionPlan(
-        PlanCode.MONTH_12, "12 месяцев", 365, 100, 45,
+        PlanCode.MONTH_12, "12 месяцев", 365, _DAILY_QUOTA, 45,
         stars_price=8400, badge="🌟",
-        description="100 прогнозов в день, все возможности без ограничений.",
+        description="До 40 прогнозов в день без ограничений по функциям.",
     ),
 }
 

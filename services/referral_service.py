@@ -78,7 +78,10 @@ class ReferralService:
         record = Referral(referrer_id=referrer.id, referred_id=referred.id)
         self._session.add(record)
         referred.referred_by_id = referrer.id
-        referrer.bonus_predictions = (referrer.bonus_predictions or 0) + self._bonus_signup
+        # Бонусы выдаём как бесплатные запросы (отдельной "бонусной" квоты нет)
+        referrer.free_predictions_left = (
+            (referrer.free_predictions_left or 0) + self._bonus_signup
+        )
         referrer.referral_signup_bonus_total = (
             (referrer.referral_signup_bonus_total or 0) + self._bonus_signup
         )
@@ -101,7 +104,9 @@ class ReferralService:
         referrer = await self._session.get(User, referred.referred_by_id)
         if referrer is None:
             return None
-        referrer.bonus_predictions = (referrer.bonus_predictions or 0) + bonus
+        referrer.free_predictions_left = (
+            (referrer.free_predictions_left or 0) + bonus
+        )
         referrer.referral_sub_bonus_total = (
             (referrer.referral_sub_bonus_total or 0) + bonus
         )
@@ -133,7 +138,7 @@ class ReferralService:
             "paid_referred": paid,
             "bonus_signup_total": user.referral_signup_bonus_total or 0,
             "bonus_sub_total": user.referral_sub_bonus_total or 0,
-            "current_bonus_balance": user.bonus_predictions or 0,
+            "current_bonus_balance": user.free_predictions_left or 0,
         }
 
 

@@ -70,7 +70,8 @@ async def test_referral_attaches(session: AsyncSession):
     assert found is not None and found.id == referrer.id
     attached = await ref_service.attach_referral(referrer=found, referred=referred)
     assert attached
-    assert referrer.bonus_predictions == 3
+    # Бонусы теперь начисляются как бесплатные запросы (bonus_predictions удалён из продукта)
+    assert referrer.free_predictions_left == 3
     assert referred.referred_by_id == referrer.id
 
 

@@ -161,58 +161,77 @@ class MatchFinder:
         home_team_id: int,
         away_team_id: int,
     ) -> MatchCandidate | None:
-        """Найти ближайший к 'сейчас' матч между двумя командами."""
-        try:
-            upcoming = await self._client.list_games(
-                both_teams=[home_team_id, away_team_id],
-                upcoming=True,
-                limit=10,
-                order=1,
-            )
-        except Exception as exc:
-            logger.debug("upcoming search failed: {}", exc)
-            upcoming = []
-        for raw in upcoming:
-            cand = _candidate_from_raw(raw)
-            if cand is not None and cand.home_id == home_team_id and cand.away_id == away_team_id:
-                return cand
+        """Найти матч между двумя командами с приоритетом:
 
-        try:
-            live = await self._client.list_games(
-                both_teams=[home_team_id, away_team_id],
-                live=True,
-                limit=10,
-            )
-        except Exception:
-            live = []
-        for raw in live:
-            cand = _candidate_from_raw(raw)
-            if cand is not None and cand.home_id == home_team_id and cand.away_id == away_team_id:
-                return cand
+        1) Матч сегодня (в рамках ±36 часов от «сейчас»).
+        2) Ближайший будущий матч.
+        3) Самый свежий сыгранный матч в прошлом (со счётом).
+        """
+        now = datetime.now(tz=UTC)
 
-        try:
-            anything = await self._client.list_games(
-                both_teams=[home_team_id, away_team_id],
-                limit=20,
-                order=-1,
-            )
-        except Exception:
-            anything = []
-        candidates: list[MatchCandidate] = []
-        for raw in anything:
+        def _pair_ok(cand: MatchCandidate) -> bool:
+            pair = {cand.home_id, cand.away_id}
+            return pair == {home_team_id, away_team_id}
+
+        # Собираем все доступные матчи в обоих направлениях (limit большой,
+        # чтобы иметь выбор для последующего ранжирования).
+        all_raw: list[dict[str, Any]] = []
+        for kwargs in (
+            {"both_teams": [home_team_id, away_team_id], "upcoming": True, "limit": 20, "order": 1},
+            {"both_teams": [home_team_id, away_team_id], "live": True, "limit": 10},
+            {"both_teams": [home_team_id, away_team_id], "limit": 40, "order": -1},
+        ):
+            try:
+                part = await self._client.list_games(**kwargs)  # type: ignore[arg-type]
+            except Exception as exc:
+                logger.debug("list_games {} failed: {}", kwargs, exc)
+                part = []
+            if isinstance(part, list):
+                all_raw.extend(part)
+
+        # Дедуп по id
+        seen: set[int] = set()
+        cands: list[MatchCandidate] = []
+        for raw in all_raw:
             cand = _candidate_from_raw(raw)
-            if cand is None:
+            if cand is None or cand.game_id in seen:
                 continue
-            if cand.home_id != home_team_id or cand.away_id != away_team_id:
+            seen.add(cand.game_id)
+            if not _pair_ok(cand):
                 continue
-            candidates.append(cand)
-        if candidates:
-            now = datetime.now(tz=UTC)
-            candidates.sort(
-                key=lambda c: abs(((_parse_date(c.date_iso) or now) - now).total_seconds())
+            cands.append(cand)
+
+        if not cands:
+            return None
+
+        def _when(cand: MatchCandidate) -> datetime | None:
+            return _parse_date(cand.date_iso)
+
+        # 1) Матч сегодня (или в ближайшие ~36ч) — самый близкий к now
+        today_window = [
+            c for c in cands
+            if (_when(c) is not None and abs((_when(c) - now).total_seconds()) <= 36 * 3600)
+        ]
+        if today_window:
+            today_window.sort(
+                key=lambda c: abs(((_when(c) or now) - now).total_seconds())
             )
-            return candidates[0]
-        return None
+            return today_window[0]
+
+        # 2) Ближайший в будущем
+        future = [c for c in cands if (_when(c) is not None and _when(c) > now)]
+        if future:
+            future.sort(key=lambda c: (_when(c) or now))
+            return future[0]
+
+        # 3) Самый свежий в прошлом
+        past = [c for c in cands if (_when(c) is not None and _when(c) <= now)]
+        if past:
+            past.sort(key=lambda c: (_when(c) or now), reverse=True)
+            return past[0]
+
+        # Фолбек — есть кандидаты, но без разбираемой даты: вернём первый
+        return cands[0]
 
 
 __all__ = ["MatchCandidate", "MatchFinder", "_candidate_from_raw", "_parse_date"]

@@ -18,9 +18,16 @@ class ValueBet:
 class ValueCalculator:
     """value = prob * actual_odds - 1; fair_odds = 1 / prob."""
 
-    def __init__(self, *, min_odds: float = 1.20, min_value_percent: float = 2.0) -> None:
+    def __init__(
+        self,
+        *,
+        min_odds: float = 1.15,
+        min_value_percent: float = 2.0,
+        min_probability: float = 0.90,
+    ) -> None:
         self.min_odds = max(1.01, min_odds)
         self.min_value_percent = max(0.0, min_value_percent)
+        self.min_probability = max(0.0, min(1.0, min_probability))
 
     def calculate(self, *, probability: float, actual_odds: float, market_key: str = "") -> ValueBet:
         prob = max(0.0, min(1.0, probability))
@@ -29,10 +36,14 @@ class ValueCalculator:
             return ValueBet(market_key, prob, odds, 0.0, -100.0, False)
         fair = 1.0 / prob
         value_percent = (prob * odds - 1.0) * 100.0
+        # Sanity-check: при p ≥ 0.90 кф не может быть > 2 — такой кф значит
+        # мы сопоставили не тот рынок; помечаем как not value и не показываем
+        suspicious = prob >= 0.90 and odds > 2.0
         is_value = (
-            odds >= self.min_odds
+            not suspicious
+            and odds > self.min_odds
             and value_percent >= self.min_value_percent
-            and prob >= 0.10
+            and prob >= self.min_probability
         )
         return ValueBet(market_key, prob, odds, fair, value_percent, is_value)
 
@@ -41,7 +52,7 @@ class ValueCalculator:
         probabilities: dict[str, float],
         odds_map: dict[str, float],
         *,
-        top_n: int = 5,
+        top_n: int = 15,
     ) -> list[ValueBet]:
         results: list[ValueBet] = []
         for key, prob in probabilities.items():

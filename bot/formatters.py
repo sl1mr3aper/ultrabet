@@ -46,10 +46,12 @@ def format_prediction(
     result: PredictionResult,
     *,
     top_predictions: int = 15,
-    top_value: int = 5,
+    top_value: int = 15,
     free_left: int = 0,
     bonus_left: int = 0,
     tz_offset: int = 3,
+    daily_used: int | None = None,
+    daily_quota: int | None = None,
 ) -> str:
     home = result.home_name
     away = result.away_name
@@ -62,15 +64,24 @@ def format_prediction(
     date_now = datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     parts: list[str] = []
-    parts.append(f"⚽ *ПРОГНОЗ НА МАТЧ* (актуально на {date_now})")
+    header = "⚽ *ПРОГНОЗ НА МАТЧ*"
+    if result.is_finished:
+        header = "⚽ *АНАЛИЗ СЫГРАННОГО МАТЧА*"
+    parts.append(f"{header}  _(актуально {date_now})_")
     parts.append(f"⚔️ *Команды*: {home} — {away}")
     parts.append(f"📅 *Дата*: {date_h}")
     parts.append(f"🏆 *Лига*: {result.league_name} ({league_country})")
+
+    if result.is_finished and result.home_score is not None and result.away_score is not None:
+        parts.append(
+            f"✅ *Матч сыгран — итог:* *{result.home_score}:{result.away_score}*  "
+            f"({home} — {away})"
+        )
     parts.append(
         f"🌟 *Glicko-2*: {result.home_rating:.0f} vs {result.away_rating:.0f}"
     )
     parts.append("")
-    parts.append("📊 *ТОП-15 ПРОГНОЗОВ (по вероятности)*")
+    parts.append(f"📊 *ТОП-{top_predictions} ПРОГНОЗОВ* _(по вероятности)_")
 
     for idx, (key, prob) in enumerate(top, start=1):
         label = label_for(key, home=home, away=away)
@@ -92,10 +103,9 @@ def format_prediction(
     parts.append(f"• Общий тотал → *{result.home_xg + result.away_xg:.2f}*")
 
     parts.append("")
-    parts.append("🏆 *ТОП ВАЛУЙНЫХ ПРОГНОЗОВ* (по убыванию EV)")
-    parts.append("Формат: модель / fair-коэф / коэф букмекера = валуйность")
+    parts.append(f"💎 *ТОП-{top_value} ВАЛУЙНЫХ СТАВОК*")
+    parts.append("_Фильтр: p ≥ 90%, кф > 1.15 · сортировка по EV_")
     if result.value_bets:
-        # Сортируем убыванием value% — гарантия от любых будущих изменений в core
         sorted_value = sorted(
             result.value_bets[:top_value],
             key=lambda b: b.value_percent,
@@ -103,47 +113,18 @@ def format_prediction(
         )
         for idx, vb in enumerate(sorted_value, start=1):
             label = label_for(vb.market_key, home=home, away=away)
-            best = result.best_odds.get(vb.market_key)
-            book_part = f" _{best[1]}_" if best else ""
             value_emoji = (
                 "💎" if vb.value_percent >= 15 else
                 "🟢" if vb.value_percent >= 8 else
-                "✅" if vb.value_percent >= 3 else "·"
+                "✅"
             )
             parts.append(
                 f"{idx}. {value_emoji} *{label}*\n"
-                f"    модель {vb.probability * 100:.1f}% · "
-                f"fair {vb.fair_odds:.2f} · "
-                f"букмекер{book_part} {vb.actual_odds:.2f} · "
-                f"*+{vb.value_percent:.2f}%*"
+                f"    p={vb.probability * 100:.1f}% · fair {vb.fair_odds:.2f} · "
+                f"кф {vb.actual_odds:.2f} · *+{vb.value_percent:.2f}%*"
             )
     else:
-        parts.append("— валуйных ставок не найдено по текущим коэффициентам")
-
-    # Показываем все рынки где есть и наша вероятность, и коэф букмекера,
-    # отсортированные по валуйности (по убыванию). Помогает увидеть полную картину.
-    parts.append("")
-    parts.append("📈 *СОПОСТАВЛЕНИЕ С КОТИРОВКАМИ* (топ по валуйности)")
-    triples: list[tuple[str, float, float, float]] = []
-    for market_key, prob in result.probabilities.items():
-        odds = result.odds_map.get(market_key)
-        if not odds or odds <= 1.0 or prob <= 0:
-            continue
-        value = (prob * odds - 1.0) * 100.0
-        triples.append((market_key, prob, odds, value))
-    triples.sort(key=lambda t: t[3], reverse=True)
-    if triples:
-        for market_key, prob, odds, value in triples[:8]:
-            label = label_for(market_key, home=home, away=away)
-            best = result.best_odds.get(market_key)
-            book_part = f" _{best[1]}_" if best else ""
-            sign = "+" if value >= 0 else ""
-            parts.append(
-                f"• {label}: {prob * 100:.1f}% · fair {1.0 / prob:.2f} · "
-                f"коэф{book_part} {odds:.2f} → {sign}{value:.2f}%"
-            )
-    else:
-        parts.append("— коэффициенты букмекеров не получены")
+        parts.append("— валуйных ставок под фильтром не найдено")
 
     if result.accuracy_notes:
         parts.append("")
@@ -162,7 +143,10 @@ def format_prediction(
         parts.append(text[:600] + ("…" if len(text) > 600 else ""))
 
     parts.append("")
-    parts.append(f"🆓 Бесплатных: *{free_left}*  •  🎁 Бонус: *{bonus_left}*")
+    if daily_quota and daily_quota > 0:
+        parts.append(f"💎 Квота подписки: *{daily_used or 0}/{daily_quota}*  •  🆓 Бесплатных: *{free_left}*")
+    else:
+        parts.append(f"🆓 Бесплатных запросов осталось: *{free_left}*")
     return "\n".join(parts)
 
 

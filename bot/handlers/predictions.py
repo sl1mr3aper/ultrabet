@@ -329,10 +329,12 @@ async def _run_prediction(
             return
 
         repo = UserRepository(session)
-        consumed = await repo.consume_quota(
-            user, daily_quota_for_subs=settings.top_predictions
+        # Предпроверка: есть ли право на запрос. Не списываем — спишем
+        # только после успешной генерации отчёта.
+        allowed, _src = await repo.check_quota(
+            user, subscription_daily_limit=settings.subscription_daily_limit,
         )
-        if not consumed:
+        if not allowed:
             await message.answer(
                 NO_QUOTA.format(bonus=settings.referral_bonus_signup),
                 parse_mode="Markdown",
@@ -348,6 +350,7 @@ async def _run_prediction(
         value_calc = ValueCalculator(
             min_odds=settings.min_value_odds,
             min_value_percent=settings.min_value_percent,
+            min_probability=settings.min_value_probability,
         )
         service = PredictionService(
             sstats, value_calculator=value_calc, odds_parser=OddsParser()
@@ -369,13 +372,23 @@ async def _run_prediction(
             await session.commit()
             return
 
+        # Отчёт получен — теперь списываем квоту
+        await repo.commit_quota(
+            user, subscription_daily_limit=settings.subscription_daily_limit,
+        )
+
         text = format_prediction(
             result,
             top_predictions=settings.top_predictions,
             top_value=settings.top_value_bets,
             free_left=user.free_predictions_left or 0,
-            bonus_left=user.bonus_predictions or 0,
+            bonus_left=0,
             tz_offset=settings.timezone_offset,
+            daily_used=user.daily_used or 0,
+            daily_quota=(
+                min(user.subscription_daily_quota or 0, settings.subscription_daily_limit)
+                if user.subscription_plan else 0
+            ),
         )
         keyboard = prediction_actions_keyboard(result.game_id)
 
