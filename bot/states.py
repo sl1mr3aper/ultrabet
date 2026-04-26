@@ -21,4 +21,13 @@ class AdminStates(StatesGroup):
     waiting_for_user_id = State()
 
 
-__all__ = ["AdminStates", "FeedbackStates", "MatchSearchStates"]
+class LeagueSearchStates(StatesGroup):
+    waiting_for_query = State()
+
+
+__all__ = [
+    "AdminStates",
+    "FeedbackStates",
+    "LeagueSearchStates",
+    "MatchSearchStates",
+]

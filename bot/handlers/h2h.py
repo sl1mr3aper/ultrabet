@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -82,9 +81,7 @@ async def _send_page(
         await target.answer()
     else:
         await target.answer(text, parse_mode="Markdown", reply_markup=kb)
-
-
-@router.message(Command("h2h"))
+# [removed: command handler — UI is buttons-only]
 async def h2h_command(message: Message) -> None:
     text = (message.text or "").split(maxsplit=1)
     if len(text) < 2:

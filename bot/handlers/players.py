@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
 from aiogram.types import Message
 
 from bot.context import services
@@ -12,9 +11,7 @@ from services.countries import format_country
 from services.player_service import PlayerService
 
 router = Router(name="players")
-
-
-@router.message(Command("player"))
+# [removed: command handler — UI is buttons-only]
 async def player_command(message: Message) -> None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:

@@ -1,8 +1,8 @@
-"""Утилиты обработки текста: транслит, поиск по нечётким строкам, хайлайт.
+"""Утилиты обработки текста: транслит, fuzzy, хайлайт, unidecode.
 
-Используется:
-- Поиск команды по введённому "Спартак" → может найти "Spartak Moscow".
-- Выделение ключевых слов в описании матча.
+Используется в 6-этапном поиске команд (services/match_finder.py):
+1) сырой запрос, 2) алиасы, 3) транслит, 4) unidecode, 5) по словам,
+6) rapidfuzz ранжирование.
 """
 
 from __future__ import annotations
@@ -10,6 +10,17 @@ from __future__ import annotations
 import re
 import unicodedata
 from difflib import SequenceMatcher
+
+try:  # rapidfuzz — опциональный ускоритель/улучшитель точности
+    from rapidfuzz import fuzz as _rf_fuzz
+except ImportError:  # pragma: no cover
+    _rf_fuzz = None  # type: ignore[assignment]
+
+try:
+    from unidecode import unidecode as _unidecode
+except ImportError:  # pragma: no cover
+    def _unidecode(s: str) -> str:
+        return s
 
 _TRANSLIT = {
     "а": "a", "б": "b", "в": "v", "г": "g", "д": "d",
@@ -49,15 +60,32 @@ def normalize_search(text: str) -> str:
     return out
 
 
+def _ascii_norm(s: str) -> str:
+    """Кириллица → латиница → unidecode → normalize_search."""
+    return normalize_search(_unidecode(transliterate(s)))
+
+
 def fuzzy_score(a: str, b: str) -> float:
-    """SequenceMatcher ratio с учётом транслитерации."""
+    """Устойчивый fuzzy-ratio в диапазоне 0..1.
+
+    Комбинируем: прямое сравнение нормализованных строк + ASCII-транслит
+    (через unidecode) + rapidfuzz token_sort/partial (если доступно).
+    Берём максимум — это делает поиск толерантным к диакритике, сокращениям
+    и разному порядку слов.
+    """
     a_norm = normalize_search(a)
     b_norm = normalize_search(b)
     direct = SequenceMatcher(a=a_norm, b=b_norm).ratio()
-    tr_a = normalize_search(transliterate(a))
-    tr_b = normalize_search(transliterate(b))
+    tr_a = _ascii_norm(a)
+    tr_b = _ascii_norm(b)
     tr = SequenceMatcher(a=tr_a, b=tr_b).ratio()
-    return max(direct, tr)
+    scores = [direct, tr]
+    if _rf_fuzz is not None:
+        # Фазовый поиск: устойчив к перестановкам и префиксам
+        scores.append(_rf_fuzz.token_sort_ratio(tr_a, tr_b) / 100.0)
+        scores.append(_rf_fuzz.partial_ratio(tr_a, tr_b) / 100.0)
+        scores.append(_rf_fuzz.WRatio(tr_a, tr_b) / 100.0)
+    return max(scores) if scores else 0.0
 
 
 def best_match(query: str, candidates: list[str], *, min_score: float = 0.4) -> str | None:

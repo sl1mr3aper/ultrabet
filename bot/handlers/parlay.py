@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
 from aiogram.types import Message
 
 from bot.keyboards import main_menu_keyboard
@@ -15,9 +14,7 @@ from bot.styles import ICON_TARGET, header
 from services.parlay import ParlayLeg, calculate_parlay, describe_risk
 
 router = Router(name="parlay")
-
-
-@router.message(Command("parlay"))
+# [removed: command handler — UI is buttons-only]
 async def parlay_cmd(message: Message) -> None:
     parts = (message.text or "").split()
     if len(parts) < 3:

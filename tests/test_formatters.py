@@ -63,7 +63,7 @@ def test_format_prediction_contains_titles():
     assert "ПРОГНОЗ НА МАТЧ" in text
     assert "Real" in text and "Barca" in text
     assert "Glicko-2" in text
-    assert "ТОП-15 ПРОГНОЗОВ" in text
+    assert "ПРОГНОЗЫ ОТ 85%" in text
     assert "ВАЛУЙНЫХ СТАВОК" in text
     assert "Бесплатных" in text and "*4*" in text
 

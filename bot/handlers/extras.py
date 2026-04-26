@@ -12,7 +12,6 @@ from __future__ import annotations
 from typing import Any
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -63,7 +62,7 @@ def _pag_kb(prefix: str, page: Page) -> InlineKeyboardBuilder:
 
 
 # ── /summary ────────────────────────────────────────────────
-@router.message(Command("summary"))
+# [removed: command handler — UI is buttons-only]
 async def summary_cmd(message: Message) -> None:
     gid = _parse_id(message)
     if gid is None:
@@ -123,9 +122,7 @@ async def _send_injuries_page(
         await target.answer()
     else:
         await target.answer(text, parse_mode="Markdown", reply_markup=kb)
-
-
-@router.message(Command("injuries"))
+# [removed: command handler — UI is buttons-only]
 async def injuries_cmd(message: Message) -> None:
     gid = _parse_id(message)
     if gid is None:
@@ -205,9 +202,7 @@ async def _send_odds_page(
         await target.answer()
     else:
         await target.answer(text, parse_mode="Markdown", reply_markup=kb)
-
-
-@router.message(Command("odds"))
+# [removed: command handler — UI is buttons-only]
 async def odds_cmd(message: Message) -> None:
     gid = _parse_id(message)
     if gid is None:
@@ -296,9 +291,7 @@ async def _send_bookmakers_page(
         await target.answer()
     else:
         await target.answer(text, parse_mode="Markdown", reply_markup=kb)
-
-
-@router.message(Command("bookmakers"))
+# [removed: command handler — UI is buttons-only]
 async def bookmakers_cmd(message: Message) -> None:
     sstats: SStatsClient = services.sstats
     rows = await sstats.list_bookmakers()
@@ -363,9 +356,7 @@ async def _send_standings_page(
         await target.answer()
     else:
         await target.answer(text, parse_mode="Markdown", reply_markup=kb)
-
-
-@router.message(Command("standings_for"))
+# [removed: command handler — UI is buttons-only]
 async def standings_for_cmd(message: Message) -> None:
     parts = (message.text or "").split()
     if len(parts) < 2:

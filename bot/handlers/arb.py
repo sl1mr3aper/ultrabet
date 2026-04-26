@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
 from aiogram.types import Message
 
 from bot.keyboards import main_menu_keyboard
@@ -28,9 +27,7 @@ def _render_arb(result: ArbCheck, total: float = 1000.0) -> str:
         book = result.bookmaker_per_outcome.get(key, "?")
         lines.append(f"  • {key} ({book}): *{val:.2f}*")
     return "\n".join(lines)
-
-
-@router.message(Command("arb2"))
+# [removed: command handler — UI is buttons-only]
 async def arb2_cmd(message: Message) -> None:
     parts = (message.text or "").split()
     if len(parts) < 3:
@@ -51,9 +48,7 @@ async def arb2_cmd(message: Message) -> None:
         parse_mode="Markdown",
         reply_markup=main_menu_keyboard(),
     )
-
-
-@router.message(Command("arb3"))
+# [removed: command handler — UI is buttons-only]
 async def arb3_cmd(message: Message) -> None:
     parts = (message.text or "").split()
     if len(parts) < 4:

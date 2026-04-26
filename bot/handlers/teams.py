@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
 from aiogram.types import Message
 
 from bot.context import services
@@ -14,9 +13,7 @@ from services.countries import format_country
 from services.team_service import TeamService
 
 router = Router(name="teams")
-
-
-@router.message(Command("team"))
+# [removed: command handler — UI is buttons-only]
 async def team_command(message: Message) -> None:
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:

@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
 from aiogram.types import Message
 
 from bot.keyboards import main_menu_keyboard
 from core.bankroll import break_even_probability, recommend_stake
 
 router = Router(name="calculator")
-
-
-@router.message(Command("calc", "calculator", "kelly"))
+# [removed: command handler — UI is buttons-only]
 async def calc_command(message: Message) -> None:
     parts = (message.text or "").split()
     if len(parts) < 4:

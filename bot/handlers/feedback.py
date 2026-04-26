@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,9 +15,7 @@ from db.models import User
 from db.repositories.feedback_repo import FeedbackRepository
 
 router = Router(name="feedback")
-
-
-@router.message(Command("feedback"))
+# [removed: command handler — UI is buttons-only]
 async def feedback_cmd(message: Message, state: FSMContext) -> None:
     await state.set_state(FeedbackStates.waiting_for_text)
     await message.answer(FEEDBACK_PROMPT, reply_markup=cancel_keyboard())

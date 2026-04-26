@@ -6,7 +6,6 @@ import asyncio
 from datetime import UTC, datetime
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
     LabeledPrice,
@@ -35,9 +34,7 @@ router = Router(name="subscription")
 
 
 # ── Команды и меню ──────────────────────────────────────────
-
-
-@router.message(Command("subscribe"))
+# [removed: command handler — UI is buttons-only]
 async def subscribe_command(message: Message) -> None:
     await message.answer(
         _subscribe_text(),

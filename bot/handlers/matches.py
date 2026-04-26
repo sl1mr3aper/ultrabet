@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -156,9 +155,7 @@ async def _render_matches_page(
         await target.answer(
             text, parse_mode="Markdown", reply_markup=builder.as_markup()
         )
-
-
-@router.message(Command("matches", "today"))
+# [removed: command handler — UI is buttons-only]
 async def matches_today(message: Message) -> None:
     parts = (message.text or "").split(maxsplit=1)
     arg = parts[1].strip().lower() if len(parts) > 1 else ""
@@ -168,14 +165,10 @@ async def matches_today(message: Message) -> None:
         await _render_matches_page(message, kind="live", page_index=0)
     else:
         await _render_matches_page(message, kind="today", page_index=0)
-
-
-@router.message(Command("tomorrow"))
+# [removed: command handler — UI is buttons-only]
 async def matches_tomorrow(message: Message) -> None:
     await _render_matches_page(message, kind="tomorrow", page_index=0)
-
-
-@router.message(Command("live"))
+# [removed: command handler — UI is buttons-only]
 async def matches_live(message: Message) -> None:
     await _render_matches_page(message, kind="live", page_index=0)
 

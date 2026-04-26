@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
 from aiogram.types import Message
 
 from bot.keyboards import main_menu_keyboard
@@ -14,9 +13,7 @@ from bot.styles import ICON_MONEY, header
 from services.bankroll import StakeInput, StakeKind, compute_stake, describe
 
 router = Router(name="bankroll")
-
-
-@router.message(Command("bankroll"))
+# [removed: command handler — UI is buttons-only]
 async def bankroll_cmd(message: Message) -> None:
     parts = (message.text or "").split()
     if len(parts) < 4:

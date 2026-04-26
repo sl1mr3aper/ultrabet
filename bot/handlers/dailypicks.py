@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -145,9 +144,7 @@ async def _render(
             reply_markup=builder.as_markup(),
             disable_web_page_preview=True,
         )
-
-
-@router.message(Command("dailypicks"))
+# [removed: command handler — UI is buttons-only]
 async def dailypicks_cmd(message: Message) -> None:
     await _render(message, page_index=0)
 

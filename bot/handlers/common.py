@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,9 +75,7 @@ async def _send_welcome(message: Message, user: User, bonus_text: str) -> None:
     if bonus_text:
         text = text + "\n\n" + bonus_text
     await message.answer(text, reply_markup=main_menu_keyboard(), parse_mode="Markdown")
-
-
-@router.message(Command("menu"))
+# [removed: command handler — UI is buttons-only]
 async def menu_command(message: Message) -> None:
     await message.answer(MAIN_MENU, reply_markup=main_menu_keyboard(), parse_mode="Markdown")
 
@@ -90,9 +88,7 @@ async def menu_home_cb(callback: CallbackQuery, state: FSMContext) -> None:
             MAIN_MENU, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
         )
     await callback.answer()
-
-
-@router.message(Command("help"))
+# [removed: command handler — UI is buttons-only]
 async def help_command(message: Message) -> None:
     await message.answer(HELP_TEXT, parse_mode="Markdown")
 
@@ -113,9 +109,7 @@ async def cancel_cb(callback: CallbackQuery, state: FSMContext) -> None:
             MAIN_MENU, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
         )
     await callback.answer("Отменено")
-
-
-@router.message(Command("balance"))
+# [removed: command handler — UI is buttons-only]
 async def balance_command(message: Message, user: User, session: AsyncSession) -> None:
     from bot.formatters import format_balance
 

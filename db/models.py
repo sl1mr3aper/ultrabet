@@ -183,11 +183,73 @@ class Feedback(Base):
     )
 
 
+class MatchResult(Base):
+    """Историческая запись сыгранного матча для self-learning.
+
+    Заполняется фоновой задачей из SStats /Games/list с order=-1 по лигам.
+    Используется `SelfLearner` для пересчёта весов ансамбля по реальным
+    результатам.
+    """
+
+    __tablename__ = "match_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
+    date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    league_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    league_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    country_name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    home_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    away_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    home_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    away_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    home_xg: Mapped[float | None] = mapped_column(nullable=True)
+    away_xg: Mapped[float | None] = mapped_column(nullable=True)
+    home_rating: Mapped[float | None] = mapped_column(nullable=True)
+    away_rating: Mapped[float | None] = mapped_column(nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now(), nullable=False
+    )
+    __table_args__ = (
+        Index("ix_match_results_home_away", "home_id", "away_id"),
+        Index("ix_match_results_date_desc", "date"),
+    )
+
+
+class PredictionOutcome(Base):
+    """Наш прогноз + реальный исход — для feedback loop self-learning."""
+
+    __tablename__ = "prediction_outcomes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    market_key: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    predicted_probability: Mapped[float] = mapped_column(nullable=False)
+    actual_odds: Mapped[float | None] = mapped_column(nullable=True)
+    # итог: True = рынок сыграл, False = нет, None = пока неизвестно
+    hit: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now(), nullable=False
+    )
+    evaluated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    __table_args__ = (
+        Index("ix_pred_outcome_game_market", "game_id", "market_key"),
+    )
+
+
 __all__ = [
     "Base",
     "Feedback",
+    "MatchResult",
     "PaymentLog",
     "PredictionLog",
+    "PredictionOutcome",
     "QueryHistory",
     "Referral",
     "User",

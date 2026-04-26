@@ -31,18 +31,9 @@ from utils.logger import setup_logging
 async def _set_commands(bot: Bot) -> None:
     from aiogram.types import BotCommand
 
+    # UX-политика: в чат-меню выставляем только /start. Все разделы — кнопками.
     commands = [
-        BotCommand(command="start", description="Запуск/главное меню"),
-        BotCommand(command="menu", description="Главное меню"),
-        BotCommand(command="match", description="Прогноз: Команда1 - Команда2"),
-        BotCommand(command="matches", description="Подборки матчей: today/tomorrow/live"),
-        BotCommand(command="league", description="Лига и её матчи"),
-        BotCommand(command="standings", description="Турнирная таблица"),
-        BotCommand(command="balance", description="Баланс прогнозов"),
-        BotCommand(command="subscribe", description="Подписки"),
-        BotCommand(command="referral", description="Реферальная программа"),
-        BotCommand(command="feedback", description="Оставить отзыв"),
-        BotCommand(command="help", description="Помощь"),
+        BotCommand(command="start", description="Главное меню"),
     ]
     await bot.set_my_commands(commands)
 

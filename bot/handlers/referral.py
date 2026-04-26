@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,9 +13,7 @@ from db.models import User
 from services.referral_service import ReferralService
 
 router = Router(name="referral")
-
-
-@router.message(Command("referral"))
+# [removed: command handler — UI is buttons-only]
 async def referral_command(
     message: Message, user: User, session: AsyncSession, settings: Settings
 ) -> None:

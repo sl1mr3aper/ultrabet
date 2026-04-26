@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -101,9 +100,7 @@ async def _render_top(
         await target.answer(
             text, parse_mode="Markdown", reply_markup=builder.as_markup()
         )
-
-
-@router.message(Command("top", "topmatches"))
+# [removed: command handler — UI is buttons-only]
 async def top_command(message: Message) -> None:
     await _render_top(message, page_index=0)
 

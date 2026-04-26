@@ -56,8 +56,10 @@ def format_prediction(
     home = result.home_name
     away = result.away_name
 
+    # Показываем прогнозы с вероятностью ≥ 85% (отсортированные по убыванию)
     sorted_probs = sorted(result.probabilities.items(), key=lambda kv: kv[1], reverse=True)
-    top = sorted_probs[:top_predictions]
+    filtered = [(k, p) for k, p in sorted_probs if p >= 0.85]
+    top = filtered[:top_predictions]
 
     league_country = format_country(result.country_raw, with_flag=True)
     date_h = _human_date(result.date_iso, tz_offset=tz_offset)
@@ -81,8 +83,9 @@ def format_prediction(
         f"🌟 *Glicko-2*: {result.home_rating:.0f} vs {result.away_rating:.0f}"
     )
     parts.append("")
-    parts.append(f"📊 *ТОП-{top_predictions} ПРОГНОЗОВ* _(по вероятности)_")
-
+    parts.append("📊 *ПРОГНОЗЫ ОТ 85%* _(по убыванию вероятности)_")
+    if not top:
+        parts.append("— в этом матче модель не нашла уверенных (≥85%) прогнозов")
     for idx, (key, prob) in enumerate(top, start=1):
         label = label_for(key, home=home, away=away)
         line = f"{idx}. {label} — *{prob * 100:.1f}%* {_emoji_for_prob(prob)}"

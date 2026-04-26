@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,9 +11,7 @@ from db.models import User
 from services.profile_service import ProfileService
 
 router = Router(name="profile")
-
-
-@router.message(Command("profile", "history", "me"))
+# [removed: command handler — UI is buttons-only]
 async def profile_command(
     message: Message, user: User, session: AsyncSession
 ) -> None:

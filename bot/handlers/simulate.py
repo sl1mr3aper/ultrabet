@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from aiogram import Router
-from aiogram.filters import Command
 from aiogram.types import Message
 
 from bot.keyboards import main_menu_keyboard
@@ -14,9 +13,7 @@ from bot.styles import ICON_CHART, header
 from services.simulation import simulate
 
 router = Router(name="simulate")
-
-
-@router.message(Command("simulate"))
+# [removed: command handler — UI is buttons-only]
 async def simulate_cmd(message: Message) -> None:
     parts = (message.text or "").split()
     if len(parts) < 3:

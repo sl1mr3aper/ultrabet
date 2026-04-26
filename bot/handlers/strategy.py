@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -33,9 +32,7 @@ def _label(kind: StrategyKind) -> str:
         StrategyKind.AGGRESSIVE: "🔥 Агрессивная",
         StrategyKind.UNDERDOG: "🎯 На аутсайдеров",
     }[kind]
-
-
-@router.message(Command("strategy"))
+# [removed: command handler — UI is buttons-only]
 async def show_strategies(message: Message) -> None:
     lines = [header("Стратегии ставок", icon=ICON_TARGET), ""]
     for k in StrategyKind:

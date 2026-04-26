@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from loguru import logger
@@ -27,6 +26,9 @@ from bot.texts import (
     NO_TEAMS_FOUND,
     PREDICTION_API_ERROR,
     PREDICTION_LOADING,
+    PREDICTION_LOADING_STAGE_2,
+    PREDICTION_LOADING_STAGE_3,
+    PREDICTION_SEARCH_LOADING,
     QUERY_PARSE_FAIL,
     QUERY_TOO_SHORT,
     TOO_MANY_TEAMS,
@@ -65,9 +67,7 @@ def _group_by_country(teams: list[dict[str, Any]]) -> dict[str, list[dict[str, A
         cname = (c.get("name") if isinstance(c, dict) else c) or "—"
         out.setdefault(cname, []).append(t)
     return out
-
-
-@router.message(Command("match"))
+# [removed: command handler — UI is buttons-only]
 async def match_command(
     message: Message,
     state: FSMContext,
@@ -103,8 +103,16 @@ async def _process_query(message: Message, state: FSMContext, raw_query: str) ->
     sstats: SStatsClient = services.sstats
     finder = MatchFinder(sstats)
 
+    # Визуальный индикатор 6-этапного поиска
+    loader = await message.answer(PREDICTION_SEARCH_LOADING, parse_mode="Markdown")
+
     home_results = await finder.search_teams(home_query, limit=25)
     away_results = await finder.search_teams(away_query, limit=25)
+
+    try:
+        await loader.delete()
+    except Exception:
+        pass
 
     if not home_results:
         await message.answer(NO_TEAMS_FOUND.format(query=home_query))
@@ -345,7 +353,17 @@ async def _run_prediction(
 
         loading_msg = None
         if not edit:
-            loading_msg = await message.answer(PREDICTION_LOADING)
+            loading_msg = await message.answer(
+                PREDICTION_LOADING, parse_mode="Markdown",
+            )
+
+        async def _advance(text: str) -> None:
+            if loading_msg is None:
+                return
+            try:
+                await loading_msg.edit_text(text, parse_mode="Markdown")
+            except Exception:
+                pass
 
         value_calc = ValueCalculator(
             min_odds=settings.min_value_odds,
@@ -355,15 +373,30 @@ async def _run_prediction(
         service = PredictionService(
             sstats, value_calculator=value_calc, odds_parser=OddsParser()
         )
+        import asyncio as _asyncio
+
+        async def _animate() -> None:
+            try:
+                await _asyncio.sleep(0.8)
+                await _advance(PREDICTION_LOADING_STAGE_2)
+                await _asyncio.sleep(0.8)
+                await _advance(PREDICTION_LOADING_STAGE_3)
+            except _asyncio.CancelledError:
+                raise
+
+        animator = _asyncio.create_task(_animate())
         try:
             result: PredictionResult | None = await service.predict(game_id)
         except Exception as exc:
+            animator.cancel()
             logger.exception("predict failed: {}", exc)
             if loading_msg:
                 await loading_msg.delete()
             await message.answer(PREDICTION_API_ERROR)
             await session.commit()
             return
+        finally:
+            animator.cancel()
 
         if result is None:
             if loading_msg:

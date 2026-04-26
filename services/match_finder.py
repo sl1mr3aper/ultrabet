@@ -9,7 +9,9 @@ from typing import Any
 from loguru import logger
 
 from api.sstats_client import SStatsClient
+from services.team_aliases import expand_aliases
 from services.text_processor import (
+    _ascii_norm,
     fuzzy_score,
     normalize_search,
     transliterate,
@@ -84,13 +86,15 @@ class MatchFinder:
         self._client = client
 
     async def search_teams(self, query: str, *, limit: int = 25) -> list[dict[str, Any]]:
-        """Многоэтапный поиск команд с fuzzy-ранжированием.
+        """6-этапный поиск команд:
 
-        Шаги:
-        1) прямой запрос через SStats ``/Teams/list?Name=<query>``;
-        2) если пусто — пробуем транслитерацию кириллица↔латиница;
-        3) если пусто — пытаемся по каждому слову отдельно;
-        4) клиентский fuzzy-ре-ранкинг по normalize_search() + fuzzy_score().
+        1) сырой запрос → SStats ``/Teams/list?Name=<q>``;
+        2) алиасы/сокращения (services/team_aliases.TEAM_ALIASES);
+        3) транслит кириллица↔латиница;
+        4) ASCII-нормализация через unidecode (снятие диакритики);
+        5) поиск по каждому слову отдельно;
+        6) клиентское fuzzy-ранжирование (rapidfuzz + SequenceMatcher) с
+           префиксным/exact-бустом, мультиязычной нормализацией и фильтром.
         """
         q = (query or "").strip()
         if not q:
@@ -110,20 +114,40 @@ class MatchFinder:
                 logger.debug("search_teams('{}') failed: {}", name, exc)
                 return []
 
+        # 1) сырой
         pool += await _try(q)
-        if not pool:
+
+        # 2) алиасы — всегда пробуем, даже если уже нашли (расширяет пул
+        # реальными английскими названиями)
+        for alias in expand_aliases(q):
+            if len(pool) >= limit * 3:
+                break
+            pool += await _try(alias)
+
+        # 3) транслит в обе стороны
+        if len(pool) < limit:
             pool += await _try(transliterate(q))
-        if not pool:
+
+        # 4) ASCII (unidecode), если в запросе есть диакритика/спецсимволы
+        if len(pool) < limit:
+            ascii_q = _ascii_norm(q)
+            if ascii_q and ascii_q != normalize_search(q):
+                pool += await _try(ascii_q)
+
+        # 5) по каждому слову (и транслит каждого слова)
+        if len(pool) < limit:
             words = [w for w in q.split() if len(w) >= 2]
             for w in words:
+                if len(pool) >= limit:
+                    break
                 pool += await _try(w)
-                if len(pool) >= limit:
-                    break
                 pool += await _try(transliterate(w))
-                if len(pool) >= limit:
-                    break
+                for alias in expand_aliases(w):
+                    if len(pool) >= limit:
+                        break
+                    pool += await _try(alias)
 
-        # удалить дубликаты по id
+        # Дедуп по id
         unique: dict[int, dict[str, Any]] = {}
         for t in pool:
             tid = t.get("id")
@@ -134,27 +158,43 @@ class MatchFinder:
         if not teams:
             return []
 
-        # клиентский fuzzy-скоринг: normalized query vs team name/country
+        # 6) клиентское fuzzy-ранжирование с бустами
         nq = normalize_search(q)
         nq_lat = normalize_search(transliterate(q))
+        nq_asc = _ascii_norm(q)
+        nq_set = {s for s in (nq, nq_lat, nq_asc) if s}
 
         def _team_score(t: dict[str, Any]) -> float:
             name = str(t.get("name") or "")
+            short = str(t.get("shortName") or t.get("code") or "")
             nt = normalize_search(name)
-            score = max(
-                fuzzy_score(nq, nt),
-                fuzzy_score(nq_lat, nt),
-            )
-            # префикс-буст
-            if nt.startswith(nq) or nt.startswith(nq_lat):
+            nt_asc = _ascii_norm(name)
+            scores: list[float] = []
+            for probe in nq_set:
+                scores.append(fuzzy_score(probe, nt))
+                if nt_asc != nt:
+                    scores.append(fuzzy_score(probe, nt_asc))
+                if short:
+                    scores.append(fuzzy_score(probe, short))
+            score = max(scores) if scores else 0.0
+            # Префикс-буст
+            if any(nt.startswith(p) or nt_asc.startswith(p) for p in nq_set if p):
                 score += 0.15
-            # exact match буст
-            if nt in (nq, nq_lat):
+            # Exact match
+            if nt in nq_set or nt_asc in nq_set:
                 score += 0.35
-            return min(1.0, score)
+            # Штраф за слишком короткое имя (<= 2 символов ≈ шум)
+            if len(nt) <= 2:
+                score -= 0.2
+            return min(1.0, max(0.0, score))
 
         teams.sort(key=_team_score, reverse=True)
-        return teams[:limit]
+        # Отсечём совсем низкие совпадения, но не меньше 5 элементов
+        ranked = [(t, _team_score(t)) for t in teams]
+        filtered = [t for t, s in ranked if s >= 0.35]
+        if len(filtered) < 5:
+            filtered = [t for t, _ in ranked[:max(5, limit)]]
+        return filtered[:limit]
 
     async def find_match_for_teams(
         self,
