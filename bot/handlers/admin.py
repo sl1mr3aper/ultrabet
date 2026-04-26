@@ -166,5 +166,47 @@ async def broadcast(
     await message.answer(f"📨 Отправлено: {sent}, ошибок: {failed}")
 
 
+@router.message(Command("admin_analytics"))
+async def admin_analytics(
+    message: Message, user: User, session: AsyncSession, settings: Settings
+) -> None:
+    """Показывает агрегированные метрики точности по прогнозам и ROI."""
+    if not _is_admin(user, settings):
+        await message.answer(ADMIN_NOT_ALLOWED)
+        return
+    try:
+        analytics = message.bot["analytics"]  # type: ignore[index]
+    except KeyError:
+        analytics = None
+    if analytics is None:
+        await message.answer("Сервис аналитики не подключен.")
+        return
+    s = analytics.summary()
+    lines = [
+        "📊 *Аналитика прогнозов*",
+        "",
+        f"• Прогнозов всего: *{s.total_predictions}*",
+        f"• Рассчитано: *{s.settled}*",
+        f"• Выиграно: *{s.won}*",
+        f"• Проиграно: *{s.lost}*",
+        f"• Hit-rate: *{s.hit_rate_pct:.2f}%*",
+        f"• ROI: *{s.roi_pct:+.2f}%*",
+        f"• Средняя валуйность: *{s.avg_value_pct:.2f}%*",
+        f"• Средний коэф: *{s.avg_odds:.2f}*",
+        f"• Лучший стрик: *{s.best_streak}*",
+        f"• Худший стрик: *{s.worst_streak}*",
+    ]
+    if s.markets_breakdown:
+        lines.append("")
+        lines.append("*Топ-рынки:*")
+        for key, cnt in sorted(
+            s.markets_breakdown.items(), key=lambda kv: kv[1], reverse=True
+        )[:10]:
+            lines.append(f"  • `{key}` → {cnt}")
+    await message.answer(
+        "\n".join(lines), parse_mode="Markdown", reply_markup=main_menu_keyboard()
+    )
+
+
 def _now() -> datetime:
     return datetime.now(tz=UTC)

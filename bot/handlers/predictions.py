@@ -382,6 +382,23 @@ async def _run_prediction(
             )
         )
 
+        # Трекаем топ-3 валуйные ставки в in-memory аналитике,
+        # чтобы /admin_analytics показывал hit-rate и ROI по реальным пикам
+        try:
+            analytics = message.bot["analytics"]  # type: ignore[index]
+        except KeyError:
+            analytics = None
+        if analytics is not None:
+            for bet in sorted(
+                result.value_bets[:3],
+                key=lambda b: b.value_percent,
+                reverse=True,
+            ):
+                try:
+                    analytics.record_prediction(result, bet)
+                except Exception as exc:
+                    logger.debug("analytics record error: {}", exc)
+
         history = QueryHistoryRepository(session)
         await history.add(
             user_id=user.id,

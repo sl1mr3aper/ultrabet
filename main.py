@@ -24,6 +24,7 @@ from bot.middlewares import (
 )
 from config import Settings, get_settings
 from db.database import Database
+from services.analytics import AnalyticsService
 from utils.logger import setup_logging
 
 
@@ -72,6 +73,7 @@ async def main() -> None:
     bot["settings"] = settings  # type: ignore[index]
     bot["sstats"] = sstats  # type: ignore[index]
     bot["session_factory"] = database.session_factory  # type: ignore[index]
+    bot["analytics"] = AnalyticsService()  # type: ignore[index]
 
     dispatcher = Dispatcher(storage=MemoryStorage())
     dispatcher["settings"] = settings
