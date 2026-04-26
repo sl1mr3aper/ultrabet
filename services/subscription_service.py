@@ -26,6 +26,14 @@ class SubscriptionPlan:
     days: int
     daily_quota: int
     referrer_bonus: int
+    stars_price: int = 0
+    badge: str = "🎯"
+    description: str = ""
+
+    @property
+    def price(self) -> int:
+        """Совместимость со старым API: цена в Stars."""
+        return self.stars_price
 
     def end_date(self, now: datetime | None = None) -> datetime:
         base = now or datetime.now(tz=UTC)
@@ -33,11 +41,31 @@ class SubscriptionPlan:
 
 
 SUBSCRIPTION_PLANS: dict[str, SubscriptionPlan] = {
-    PlanCode.DAY_1: SubscriptionPlan(PlanCode.DAY_1, "1 день", 1, 10, 0),
-    PlanCode.WEEK_1: SubscriptionPlan(PlanCode.WEEK_1, "1 неделя", 7, 15, 2),
-    PlanCode.MONTH_1: SubscriptionPlan(PlanCode.MONTH_1, "1 месяц", 30, 30, 5),
-    PlanCode.MONTH_3: SubscriptionPlan(PlanCode.MONTH_3, "3 месяца", 90, 50, 15),
-    PlanCode.MONTH_12: SubscriptionPlan(PlanCode.MONTH_12, "12 месяцев", 365, 100, 45),
+    PlanCode.DAY_1: SubscriptionPlan(
+        PlanCode.DAY_1, "1 день", 1, 10, 0,
+        stars_price=50, badge="🎟",
+        description="Тест-драйв на сутки: 10 прогнозов в день.",
+    ),
+    PlanCode.WEEK_1: SubscriptionPlan(
+        PlanCode.WEEK_1, "1 неделя", 7, 15, 2,
+        stars_price=250, badge="🎫",
+        description="15 прогнозов в день + приоритетная очередь.",
+    ),
+    PlanCode.MONTH_1: SubscriptionPlan(
+        PlanCode.MONTH_1, "1 месяц", 30, 30, 5,
+        stars_price=900, badge="💎",
+        description="30 прогнозов в день, разделы live-монитора и дневной дайджест.",
+    ),
+    PlanCode.MONTH_3: SubscriptionPlan(
+        PlanCode.MONTH_3, "3 месяца", 90, 50, 15,
+        stars_price=2400, badge="🔥",
+        description="50 прогнозов в день + расширенная аналитика и экспорт.",
+    ),
+    PlanCode.MONTH_12: SubscriptionPlan(
+        PlanCode.MONTH_12, "12 месяцев", 365, 100, 45,
+        stars_price=8400, badge="🌟",
+        description="100 прогнозов в день, все возможности без ограничений.",
+    ),
 }
 
 

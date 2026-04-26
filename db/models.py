@@ -65,6 +65,9 @@ class User(Base):
     # Метаданные
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    badge: Mapped[str] = mapped_column(String(8), default="", nullable=False)
+    strategy: Mapped[str | None] = mapped_column(String(16), default="balanced", nullable=True)
+    notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, server_default=func.now(), nullable=False
     )

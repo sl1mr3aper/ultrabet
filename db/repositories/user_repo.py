@@ -60,6 +60,18 @@ class UserRepository:
     async def get_by_id(self, user_id: int) -> User | None:
         return await self._session.get(User, user_id)
 
+    async def list_expired_subscriptions(self) -> list[User]:
+        """Пользователи с истекшей подпиской, у которых ещё заполнен план."""
+        now = datetime.now(tz=UTC)
+        result = await self._session.scalars(
+            select(User).where(
+                User.subscription_plan.is_not(None),
+                User.subscription_until.is_not(None),
+                User.subscription_until <= now,
+            )
+        )
+        return list(result)
+
     async def all_users(self, *, limit: int = 1000, offset: int = 0) -> list[User]:
         result = await self._session.scalars(
             select(User).order_by(User.id.desc()).limit(limit).offset(offset)

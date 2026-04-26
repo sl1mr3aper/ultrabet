@@ -227,7 +227,9 @@ async def away_picked(callback: CallbackQuery, state: FSMContext) -> None:
         )
         await callback.answer()
         return
-    await _run_prediction(callback.message, state, cand.game_id)
+    await _run_prediction(
+        callback.message, state, cand.game_id, caller_tg_id=callback.from_user.id,
+    )
     await callback.answer()
 
 
@@ -240,7 +242,10 @@ async def refresh_prediction(callback: CallbackQuery, state: FSMContext) -> None
     sstats: SStatsClient = services.sstats
     await sstats.cache.invalidate(prefix=f"odds:{game_id}")
     await sstats.cache.invalidate(prefix=f"glicko:{game_id}")
-    await _run_prediction(callback.message, state, game_id, edit=True)
+    await _run_prediction(
+        callback.message, state, game_id,
+        edit=True, caller_tg_id=callback.from_user.id,
+    )
     await callback.answer("Обновлено")
 
 
@@ -260,7 +265,10 @@ async def predict_match_cb(callback: CallbackQuery, state: FSMContext) -> None:
     except ValueError:
         await callback.answer("Неверный матч.")
         return
-    await _run_prediction(callback.message, state, game_id, edit=True)
+    await _run_prediction(
+        callback.message, state, game_id,
+        edit=True, caller_tg_id=callback.from_user.id,
+    )
     await callback.answer()
 
 
@@ -290,6 +298,7 @@ async def _run_prediction(
     game_id: int,
     *,
     edit: bool = False,
+    caller_tg_id: int | None = None,
 ) -> None:
     settings: Settings = services.settings
     sstats: SStatsClient = services.sstats
@@ -297,9 +306,22 @@ async def _run_prediction(
     user: User | None = None
 
     try:
-        if message.from_user is not None:
+        tg_id = caller_tg_id
+        if tg_id is None and message.from_user is not None:
+            tg_id = message.from_user.id
+        if tg_id is not None:
             user_repo = UserRepository(session)
-            user = await user_repo.get_by_tg_id(message.from_user.id)
+            user = await user_repo.get_by_tg_id(tg_id)
+            if user is None:
+                # Пользователь кликает до /start — создадим его на лету
+                user, _ = await user_repo.get_or_create(
+                    tg_id=tg_id,
+                    username=None,
+                    first_name=None,
+                    last_name=None,
+                    language_code=None,
+                    free_initial=settings.free_predictions_initial,
+                )
 
         if user is None:
             await message.answer("Сначала вызови /start.")

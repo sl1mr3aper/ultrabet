@@ -20,14 +20,12 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text=Buttons.TOMORROW, callback_data="menu:tomorrow")
     builder.button(text=Buttons.LIVE, callback_data="menu:live")
     builder.button(text=Buttons.LEAGUES, callback_data="menu:leagues")
-    builder.button(text=Buttons.STANDINGS, callback_data="menu:standings")
-    builder.button(text=Buttons.BALANCE, callback_data="menu:balance")
     builder.button(text=Buttons.SUBSCRIPTION, callback_data="menu:subscribe")
     builder.button(text=Buttons.REFERRAL, callback_data="menu:referral")
     builder.button(text=Buttons.SETTINGS, callback_data="menu:settings")
     builder.button(text=Buttons.ABOUT, callback_data="menu:about")
     builder.button(text=Buttons.HELP, callback_data="menu:help")
-    builder.adjust(1, 2, 2, 2, 2, 2, 1)
+    builder.adjust(1, 2, 2, 1, 2, 2)
     return builder.as_markup()
 
 

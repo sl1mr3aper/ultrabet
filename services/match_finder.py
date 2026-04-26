@@ -9,6 +9,11 @@ from typing import Any
 from loguru import logger
 
 from api.sstats_client import SStatsClient
+from services.text_processor import (
+    fuzzy_score,
+    normalize_search,
+    transliterate,
+)
 
 
 @dataclass(slots=True)
@@ -79,7 +84,77 @@ class MatchFinder:
         self._client = client
 
     async def search_teams(self, query: str, *, limit: int = 25) -> list[dict[str, Any]]:
-        return await self._client.search_teams(query, limit=limit)
+        """Многоэтапный поиск команд с fuzzy-ранжированием.
+
+        Шаги:
+        1) прямой запрос через SStats ``/Teams/list?Name=<query>``;
+        2) если пусто — пробуем транслитерацию кириллица↔латиница;
+        3) если пусто — пытаемся по каждому слову отдельно;
+        4) клиентский fuzzy-ре-ранкинг по normalize_search() + fuzzy_score().
+        """
+        q = (query or "").strip()
+        if not q:
+            return []
+
+        tried: set[str] = set()
+        pool: list[dict[str, Any]] = []
+
+        async def _try(name: str) -> list[dict[str, Any]]:
+            key = name.strip().lower()
+            if not key or key in tried:
+                return []
+            tried.add(key)
+            try:
+                return await self._client.search_teams(name, limit=limit)
+            except Exception as exc:
+                logger.debug("search_teams('{}') failed: {}", name, exc)
+                return []
+
+        pool += await _try(q)
+        if not pool:
+            pool += await _try(transliterate(q))
+        if not pool:
+            words = [w for w in q.split() if len(w) >= 2]
+            for w in words:
+                pool += await _try(w)
+                if len(pool) >= limit:
+                    break
+                pool += await _try(transliterate(w))
+                if len(pool) >= limit:
+                    break
+
+        # удалить дубликаты по id
+        unique: dict[int, dict[str, Any]] = {}
+        for t in pool:
+            tid = t.get("id")
+            if tid is None:
+                continue
+            unique[int(tid)] = t
+        teams = list(unique.values())
+        if not teams:
+            return []
+
+        # клиентский fuzzy-скоринг: normalized query vs team name/country
+        nq = normalize_search(q)
+        nq_lat = normalize_search(transliterate(q))
+
+        def _team_score(t: dict[str, Any]) -> float:
+            name = str(t.get("name") or "")
+            nt = normalize_search(name)
+            score = max(
+                fuzzy_score(nq, nt),
+                fuzzy_score(nq_lat, nt),
+            )
+            # префикс-буст
+            if nt.startswith(nq) or nt.startswith(nq_lat):
+                score += 0.15
+            # exact match буст
+            if nt in (nq, nq_lat):
+                score += 0.35
+            return min(1.0, score)
+
+        teams.sort(key=_team_score, reverse=True)
+        return teams[:limit]
 
     async def find_match_for_teams(
         self,
