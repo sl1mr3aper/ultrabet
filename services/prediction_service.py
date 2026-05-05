@@ -233,6 +233,7 @@ class PredictionService:
             league_id=_league_id,
             country=_country_name,
             league_avg_total=_league_avg_total,
+            n_league_matches=_league_n_matches,
         )
 
         # Внешние агрегаторы (NB-Bet, Flashscore) — best-effort, не блокируем.

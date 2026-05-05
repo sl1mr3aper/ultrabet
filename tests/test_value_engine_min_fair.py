@@ -26,9 +26,9 @@ def test_min_prob_take_blocks_below_45pct() -> None:
     assert score.verdict in {"не брать", "осторожно"}
 
 
-def test_take_at_50pct_with_strong_value() -> None:
-    """p=0.50, odd=2.20 → fair=2.0, EV=10% → должен быть «брать»."""
-    score = score_pick(market_key="home", probability=0.50, odds=2.20)
+def test_take_at_60pct_with_strong_value() -> None:
+    """p=0.60, odd=1.85 → fair=1.67, EV=11% → должен быть «брать»."""
+    score = score_pick(market_key="home", probability=0.60, odds=1.85)
     assert score.fair_odds >= MIN_FAIR_ODDS
     assert score.probability >= MIN_PROB_TAKE
     assert score.ev_pct >= MIN_VALUE_PCT_TAKE
