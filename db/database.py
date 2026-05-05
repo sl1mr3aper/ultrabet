@@ -83,31 +83,45 @@ class Database:
             if self._url.startswith("sqlite"):
                 from sqlalchemy import text
 
-                try:
-                    cols = await conn.execute(
-                        text("PRAGMA table_info(users)"),
-                    )
-                    existing = {row[1] for row in cols.fetchall()}
-                    add_columns = [
-                        (
-                            "subscription_expired_notified_at",
-                            "DATETIME",
-                        ),
-                    ]
-                    for col_name, col_type in add_columns:
-                        if col_name not in existing:
-                            await conn.execute(
-                                text(
-                                    f"ALTER TABLE users ADD COLUMN "
-                                    f"{col_name} {col_type}",
-                                ),
-                            )
-                            logger.info(
-                                "DB migration: added column users.{}",
-                                col_name,
-                            )
-                except Exception as exc:
-                    logger.warning("Soft DB migration skipped: {}", exc)
+                # Карта таблица → список (column, sql_type) для добавления.
+                soft_migrations: dict[str, list[tuple[str, str]]] = {
+                    "users": [
+                        ("subscription_expired_notified_at", "DATETIME"),
+                    ],
+                    "prediction_outcomes": [
+                        ("closing_odds", "FLOAT"),
+                        ("clv", "FLOAT"),
+                        ("league_id", "BIGINT"),
+                        ("market_category", "VARCHAR(32)"),
+                    ],
+                }
+                for table_name, columns in soft_migrations.items():
+                    try:
+                        cols = await conn.execute(
+                            text(f"PRAGMA table_info({table_name})"),
+                        )
+                        existing = {row[1] for row in cols.fetchall()}
+                        if not existing:
+                            # Таблицы ещё нет — create_all создаст её
+                            # уже с нужной схемой; ALTER не нужен.
+                            continue
+                        for col_name, col_type in columns:
+                            if col_name not in existing:
+                                await conn.execute(
+                                    text(
+                                        f"ALTER TABLE {table_name} "
+                                        f"ADD COLUMN {col_name} {col_type}",
+                                    ),
+                                )
+                                logger.info(
+                                    "DB migration: added column {}.{}",
+                                    table_name, col_name,
+                                )
+                    except Exception as exc:
+                        logger.warning(
+                            "Soft DB migration skipped for {}: {}",
+                            table_name, exc,
+                        )
         logger.info("Database initialized at {}", self._url)
 
     @asynccontextmanager
