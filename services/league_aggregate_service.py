@@ -102,12 +102,17 @@ class LeagueAggregateService:
             row = await session.scalar(
                 select(LeagueAggregate).where(LeagueAggregate.league_id == league_id)
             )
-            if row is not None and (
-                datetime.now(tz=UTC) - row.updated_at
-            ) < timedelta(seconds=_CACHE_TTL_SECONDS) and (row.n_matches or 0) >= _MIN_MATCHES:
-                stats = self._row_to_stats(row)
-                self._cache[league_id] = (stats, datetime.now(tz=UTC))
-                return stats
+            if row is not None and (row.n_matches or 0) >= _MIN_MATCHES:
+                # SQLite часто возвращает naive datetime; нормализуем к UTC.
+                _updated_at = row.updated_at
+                if _updated_at is not None and _updated_at.tzinfo is None:
+                    _updated_at = _updated_at.replace(tzinfo=UTC)
+                if _updated_at is not None and (
+                    datetime.now(tz=UTC) - _updated_at
+                ) < timedelta(seconds=_CACHE_TTL_SECONDS):
+                    stats = self._row_to_stats(row)
+                    self._cache[league_id] = (stats, datetime.now(tz=UTC))
+                    return stats
         finally:
             await session.close()
 
