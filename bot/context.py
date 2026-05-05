@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from services.history_backfill import HistoryBackfillService
     from services.kv_cache import KVCache
     from services.league_aggregate_service import LeagueAggregateService
+    from services.pick_adjustment_cache import PickAdjustmentCache
     from services.predictions_resolver import PredictionsResolver
     from services.self_learner import SelfLearner
     from services.topmatches_precompute import TopMatchesPrecompute
@@ -37,6 +38,10 @@ class _Services:
     topmatches_precompute: TopMatchesPrecompute | None = None
     kv_cache: KVCache | None = None
     league_aggregates: LeagueAggregateService | None = None
+    # SecondaryPickCalibrator кэш: дёргается в PredictionService.predict()
+    # чтобы применить эмпирические adjustment_factor'ы. Заполняется
+    # фоновым refresh-loop'ом раз в час.
+    pick_adjustments: PickAdjustmentCache | None = None
 
 
 services = _Services()

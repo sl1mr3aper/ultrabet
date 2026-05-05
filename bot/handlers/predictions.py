@@ -1097,6 +1097,49 @@ async def _run_prediction(
         except Exception as exc:
             logger.debug("prediction outcome record error: {}", exc)
 
+        # Полная история ВСЕХ пиков по матчу (для secondary_pick_calibrator).
+        # Отделено от PredictionOutcome потому что там хранится только
+        # main+value, а тут — все 40+ рынков для условной калибровки.
+        try:
+            from services.match_pick_history import (
+                PickSnapshot,
+                record_picks,
+            )
+
+            _main_key: str | None = None
+            if _payload_json:
+                try:
+                    _main_key = json.loads(_payload_json).get("top_market_key")
+                except Exception:
+                    _main_key = None
+            # Берём сырые (model) вероятности из extra если есть, чтобы
+            # SecondaryPickCalibrator работал на чистых данных без
+            # обратной связи через ранее применённый adjustment_factor.
+            _src_probs = (
+                getattr(result, "extra", None) or {}
+            ).get("probabilities_raw") or result.probabilities
+            _all_picks = [
+                PickSnapshot(
+                    market_key=str(k),
+                    probability=float(p),
+                    fair_odds=(1.0 / p) if p > 1e-6 else None,
+                )
+                for k, p in _src_probs.items()
+                if isinstance(k, str) and 0.0 < float(p) <= 1.0
+            ]
+            await record_picks(
+                session,
+                game_id=result.game_id,
+                league_id=result.league_id,
+                picks=_all_picks,
+                main_pick_key=_main_key if isinstance(_main_key, str) else None,
+                is_backtest=False,
+                home_score=result.home_score,
+                away_score=result.away_score,
+            )
+        except Exception as exc:
+            logger.debug("match_pick_history record error: {}", exc)
+
         history = QueryHistoryRepository(session)
         await history.add(
             user_id=user.id,

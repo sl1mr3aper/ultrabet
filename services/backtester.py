@@ -89,6 +89,24 @@ def kelly_stake(fraction: float = 1.0, *, cap: float = 0.10) -> StakeFn:
     return inner
 
 
+@dataclass(slots=True)
+class _PickHistoryEntry:
+    """Буферная запись для последующего сброса в `match_pick_history`.
+
+    Заполняется в `Backtester.process()` для КАЖДОГО матча — независимо
+    от того, прошли пики стратегию или нет. Drainается асинхронным
+    helper'ом `flush_history_to_db()` после прогона бэктеста.
+    """
+
+    game_id: int
+    league_id: int | None
+    league_name: str | None
+    home_score: int
+    away_score: int
+    main_pick_market: str | None
+    picks: list[Pick]
+
+
 class Backtester:
     def __init__(
         self,
@@ -105,13 +123,39 @@ class Backtester:
         self._peak_bankroll = initial_bankroll
         self._max_drawdown = 0.0
         self._daily_returns: dict[date, float] = {}
+        # Буфер пиков для последующего сброса в БД.
+        self._pick_history_buffer: list[_PickHistoryEntry] = []
+
+    @property
+    def pick_history_buffer(self) -> list[_PickHistoryEntry]:
+        """Накопленные пики (для async-сброса в `match_pick_history`)."""
+        return self._pick_history_buffer
 
     def process(
         self,
         game: HistoricalGame,
         picks: list[Pick],
         results_for_markets: dict[str, bool],
+        *,
+        league_id: int | None = None,
     ) -> int:
+        # Главный пик = pick с максимальным composite score (если стратегия
+        # отсортировала их). Если нет — берём первый (как fallback).
+        main_pick_market: str | None = picks[0].market if picks else None
+        # Буферим ВСЕ пики (а не только прошедшие стратегию), чтобы
+        # secondary_pick_calibrator мог учесть и непокрытые рынки тоже.
+        self._pick_history_buffer.append(
+            _PickHistoryEntry(
+                game_id=game.game_id,
+                league_id=league_id,
+                league_name=game.league,
+                home_score=game.home_score,
+                away_score=game.away_score,
+                main_pick_market=main_pick_market,
+                picks=list(picks),
+            ),
+        )
+
         selected = self._strategy(picks)
         placed = 0
         for pick in selected:
@@ -187,6 +231,53 @@ class Backtester:
         return self._bankroll
 
 
+async def flush_history_to_db(
+    backtester: Backtester,
+    session_factory: object,
+) -> int:
+    """Сбросить буфер пиков бэктестера в `match_pick_history`.
+
+    Вызывается после `Backtester.process(...)` для каждого матча.
+    Все записи помечены `is_backtest=True`, чтобы отделять их от
+    live-прогнозов в калибраторе.
+    """
+    buf = backtester.pick_history_buffer
+    if not buf:
+        return 0
+    from services.match_pick_history import (
+        PickSnapshot,
+        record_picks,
+    )
+
+    session = session_factory()  # type: ignore[operator,call-arg]
+    written = 0
+    try:
+        for entry in buf:
+            picks = [
+                PickSnapshot(
+                    market_key=p.market,
+                    probability=p.probability,
+                    fair_odds=p.fair_odds,
+                )
+                for p in entry.picks
+            ]
+            written += await record_picks(
+                session,
+                game_id=entry.game_id,
+                league_id=entry.league_id,
+                picks=picks,
+                main_pick_key=entry.main_pick_market,
+                is_backtest=True,
+                home_score=entry.home_score,
+                away_score=entry.away_score,
+            )
+        await session.commit()
+    finally:
+        await session.close()
+    buf.clear()
+    return written
+
+
 __all__ = [
     "BacktestReport",
     "Backtester",
@@ -194,6 +285,7 @@ __all__ = [
     "Pick",
     "Placement",
     "flat_stake",
+    "flush_history_to_db",
     "kelly_stake",
     "percent_stake",
 ]

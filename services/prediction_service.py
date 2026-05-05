@@ -330,6 +330,42 @@ class PredictionService:
         except Exception as exc:  # pragma: no cover
             logger.debug("oracle refine error: {}", exc)
 
+        # Сохраняем вероятности модели ДО adjustment'ов: эти числа
+        # пишутся в `match_pick_history` и потом используются
+        # `SecondaryPickCalibrator` чтобы сравнить с эмпирической
+        # частотой. Если бы мы записывали уже adjusted-вероятности,
+        # калибратор сходился бы к фиксированной точке (overfit).
+        probabilities_raw = dict(probabilities)
+
+        # SecondaryPickCalibrator: применяем накопленный
+        # `adjustment_factor` per market_key. На свежем боте
+        # cache пуст → factor=1.0 → поведение неизменно.
+        try:
+            from bot.context import services as _ctx_services
+            _adj_cache = getattr(_ctx_services, "pick_adjustments", None)
+        except Exception:
+            _adj_cache = None
+        applied_adjustments: dict[str, float] = {}
+        if _adj_cache is not None:
+            try:
+                _factors = _adj_cache.get_for("any")
+                if _factors:
+                    from core.value_engine import (
+                        MAX_PROB_SANE,
+                    )
+
+                    new_probs: dict[str, float] = {}
+                    for _k, _p in probabilities.items():
+                        _f = float(_factors.get(_k, 1.0))
+                        _f = max(0.5, min(1.5, _f))
+                        new_p = max(0.0, min(MAX_PROB_SANE, float(_p) * _f))
+                        new_probs[_k] = new_p
+                        if _f != 1.0:
+                            applied_adjustments[_k] = _f
+                    probabilities = new_probs
+            except Exception as exc:
+                logger.debug("pick_adjustments apply error: {}", exc)
+
         value_bets = self._value.find_top_value(
             probabilities, odds_map, top_n=15
         )
@@ -538,6 +574,15 @@ class PredictionService:
                         "league_n_matches": _league_n_matches,
                     }
                     if _league_n_matches > 0
+                    else {}
+                ),
+                # Сырые вероятности модели до SecondaryPickCalibrator —
+                # для записи в `match_pick_history` (не подвержены
+                # adjustment loop'у).
+                "probabilities_raw": probabilities_raw,
+                **(
+                    {"applied_adjustments": applied_adjustments}
+                    if applied_adjustments
                     else {}
                 ),
             },

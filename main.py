@@ -117,6 +117,14 @@ async def main() -> None:
         sstats, database.session_factory,
     )
     _services.league_aggregates = LeagueAggregateService(database.session_factory)
+    # SecondaryPickCalibrator: считает adjustment_factor по истории всех
+    # пиков (`match_pick_history`). Применяется к probabilities в
+    # PredictionService — корректирует модель на основе эмпирики.
+    from services.pick_adjustment_cache import PickAdjustmentCache
+    _services.pick_adjustments = PickAdjustmentCache(
+        database.session_factory,
+        refresh_interval_seconds=3600,  # пересчёт раз в час
+    )
 
     def _build_prediction_service() -> Any:
         from core.value_calculator import ValueCalculator
@@ -229,11 +237,32 @@ async def main() -> None:
     expire_task = asyncio.create_task(expire_subscriptions_loop(bot, 3600))
 
     async def _self_learning_loop() -> None:
-        # Раз в 6 часов оцениваем новые результаты и пересчитываем калибровку
+        # Раз в 6 часов оцениваем новые результаты и пересчитываем калибровку.
+        # В этом же loop'е резолвим match_pick_history (все ~40 пиков матча)
+        # и пересчитываем adjustment_factor через SecondaryPickCalibrator.
         while True:
             try:
                 await _services.self_learner.evaluate_pending()  # type: ignore[union-attr]
                 await _services.self_learner.compute_snapshot()  # type: ignore[union-attr]
+                from services.match_pick_history import (
+                    resolve_pending_picks,
+                )
+                from services.secondary_pick_calibrator import (
+                    SecondaryPickCalibrator,
+                )
+
+                resolved_n = await resolve_pending_picks(
+                    database.session_factory,
+                )
+                if resolved_n > 0:
+                    logger.info(
+                        "match_pick_history: resolved {} picks",
+                        resolved_n,
+                    )
+                calib = SecondaryPickCalibrator(database.session_factory)
+                stats = await calib.compute_adjustments()
+                if stats and _services.pick_adjustments is not None:
+                    await _services.pick_adjustments.refresh_now()
             except Exception as exc:
                 logger.warning("self-learning loop error: {}", exc)
             await asyncio.sleep(6 * 3600)
@@ -317,6 +346,11 @@ async def main() -> None:
     warmer_task = asyncio.create_task(_cache_warmer_loop())
     precompute_task = asyncio.create_task(_topmatches_precompute_loop())
     standings_task = asyncio.create_task(_standings_sync_loop())
+    # PickAdjustmentCache: фоновый refresh-loop читает таблицу
+    # `pick_adjustments` (заполняется SecondaryPickCalibrator'ом
+    # в self-learning loop) и обновляет in-memory словарь.
+    if _services.pick_adjustments is not None:
+        await _services.pick_adjustments.start()
 
     polling_task = asyncio.create_task(dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types()))
     stop_task = asyncio.create_task(stop_event.wait())
@@ -329,6 +363,8 @@ async def main() -> None:
     warmer_task.cancel()
     precompute_task.cancel()
     standings_task.cancel()
+    if _services.pick_adjustments is not None:
+        await _services.pick_adjustments.stop()
 
     logger.info("Завершаю работу...")
     await dispatcher.stop_polling()

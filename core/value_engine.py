@@ -143,6 +143,7 @@ def score_pick(
     probability: float,
     odds: float | None,
     market_blocked: bool = False,
+    adjustment_factor: float = 1.0,
 ) -> PickScore:
     """Оценить один пик — вернуть `PickScore`.
 
@@ -150,8 +151,17 @@ def score_pick(
     «брать» автоматически понижается до «осторожно» независимо от EV.
     Используется `MarketFilter` для блокировки рынков с систематически
     отрицательным CLV.
+
+    Параметр ``adjustment_factor`` (по умолчанию 1.0) — множитель
+    к probability, накопленный из истории всех пиков
+    (`SecondaryPickCalibrator`). Зажат в [0.5, 1.5] и итоговая
+    вероятность ограничена `MAX_PROB_SANE`. Если empirical hit-rate
+    рынка систематически выше/ниже модельного, мы смещаем вероятность
+    в сторону эмпирики до того, как считать EV и вердикт.
     """
-    p = max(0.0, min(1.0, float(probability)))
+    factor = max(0.5, min(1.5, float(adjustment_factor)))
+    p_raw = max(0.0, min(1.0, float(probability)))
+    p = max(0.0, min(MAX_PROB_SANE, p_raw * factor))
     o_raw = float(odds) if odds is not None and odds > 0 else None
     fair = _fair_odds(p) if p > 0 else 0.0
     # Санити: отбрасываем кривые real_odds (мусор от букмекера
@@ -183,6 +193,7 @@ def select_best_pick(
     accept_only: bool = True,
     fallback_to_caution: bool = True,
     market_filter: object | None = None,
+    adjustment_map: dict[str, float] | None = None,
 ) -> PickScore | None:
     """Найти лучший пик по матчу.
 
@@ -197,10 +208,15 @@ def select_best_pick(
     ``is_blocked(market_key, model_prob) -> bool``: если возвращает True,
     пик не получит вердикт «брать» (понижается до «осторожно»). Это
     блокирует рынки с систематически отрицательным CLV (см. MarketFilter).
+
+    Параметр ``adjustment_map`` (опциональный) — словарь
+    {market_key: factor}, накопленный `SecondaryPickCalibrator`.
+    Применяется как множитель к probability (см. score_pick).
     """
     if not probabilities:
         return None
     odds_map = odds_map or {}
+    adjustment_map = adjustment_map or {}
 
     scored: list[PickScore] = []
     for key, prob in probabilities.items():
@@ -222,12 +238,14 @@ def select_best_pick(
                 blocked = bool(market_filter.is_blocked(key, float(prob)))  # type: ignore[attr-defined]
             except Exception:
                 blocked = False
+        adj = float(adjustment_map.get(key, 1.0))
         scored.append(
             score_pick(
                 market_key=key,
                 probability=float(prob),
                 odds=odd_f,
                 market_blocked=blocked,
+                adjustment_factor=adj,
             )
         )
 

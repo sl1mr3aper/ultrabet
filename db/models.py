@@ -463,6 +463,128 @@ class BacktestResult(Base):
     )
 
 
+class MatchPickHistory(Base):
+    """Полная история ВСЕХ пиков по матчу (а не только главного).
+
+    В отличие от `prediction_outcomes` (один main pick на матч), сюда
+    пишется КАЖДЫЙ из ~40 рынков, которые модель посчитала. Это нужно
+    чтобы калибратор учитывал условные вероятности типа «когда главный
+    пик пролетел и счёт получился X:Y, какие из вторичных пиков обычно
+    заходят».
+
+    Заполняется автоматически:
+      * `PredictionService.predict()` — на каждый live-прогноз
+      * `Backtester.simulate()` — на каждый бэктест (с `is_backtest=True`)
+
+    После того как матч завершился, `SelfLearner.evaluate_pending`
+    проставляет `hit` (через `MarketResolver`).
+
+    Используется `SecondaryPickCalibrator` для подсчёта
+    per-market `adjustment_factor`.
+    """
+
+    __tablename__ = "match_pick_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    league_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, index=True,
+    )
+    market_key: Mapped[str] = mapped_column(
+        String(48), nullable=False, index=True,
+    )
+    market_category: Mapped[str | None] = mapped_column(
+        String(24), nullable=True, index=True,
+    )
+    # Вероятность модели на момент прогноза (до калибровки или после
+    # — храним «как показали пользователю»).
+    predicted_probability: Mapped[float] = mapped_column(nullable=False)
+    fair_odds: Mapped[float | None] = mapped_column(nullable=True)
+    # Был ли этот пик главным (top-1 composite score) в рамках матча.
+    is_main_pick: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True,
+    )
+    # Бэктест (на исторических данных) или live-прогноз пользователя.
+    is_backtest: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True,
+    )
+    # Реальный результат после матча.
+    home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hit: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    # Зашёл ли главный пик матча. Заполняется при resolve, дублируется
+    # на КАЖДЫЙ pick того же game_id чтобы быстро запрашивать
+    # «пики при провале главного».
+    main_pick_hit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+    evaluated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_id", "market_key", "is_backtest",
+            name="uq_pick_hist_game_market_btx",
+        ),
+        Index("ix_pick_hist_market_hit", "market_key", "hit"),
+        Index("ix_pick_hist_main_hit", "is_main_pick", "main_pick_hit"),
+    )
+
+
+class PickAdjustment(Base):
+    """Накопленный adjustment_factor на market_key из эмпирики.
+
+    Создаётся `SecondaryPickCalibrator` (ежедневный cron):
+      * Для каждого market_key считаем empirical hit-rate из
+        `match_pick_history` (>=30 семплов).
+      * Сравниваем с avg(predicted_probability) того же market_key.
+      * `adjustment_factor = empirical / predicted` (clip [0.5, 1.5]).
+      * Дополнительно — отдельный adjustment для условия
+        `main_pick_hit=False` (если главный пик пролетел).
+
+    Применяется в `value_engine.score_pick()`: умножаем probability
+    на factor перед расчётом EV. Это меняет решение «брать/не брать»
+    в сторону рынков, где модель действительно точнее.
+    """
+
+    __tablename__ = "pick_adjustments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market_key: Mapped[str] = mapped_column(
+        String(48), nullable=False, index=True,
+    )
+    # "any" — общий, "main_lost" — условный когда главный пик пролетел.
+    condition: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="any", index=True,
+    )
+    sample_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    empirical_hit_rate: Mapped[float] = mapped_column(nullable=False)
+    avg_predicted_prob: Mapped[float] = mapped_column(nullable=False)
+    adjustment_factor: Mapped[float] = mapped_column(nullable=False, default=1.0)
+    confidence: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "market_key", "condition", name="uq_pick_adjust_market_cond",
+        ),
+        Index(
+            "ix_pick_adjust_lookup", "market_key", "condition",
+        ),
+    )
+
+
 __all__ = [
     "BacktestResult",
     "Base",
@@ -470,8 +592,10 @@ __all__ = [
     "Feedback",
     "LeagueAggregate",
     "LeagueStanding",
+    "MatchPickHistory",
     "MatchResult",
     "PaymentLog",
+    "PickAdjustment",
     "PinnacleClosingOdds",
     "PredictionCache",
     "PredictionLog",
