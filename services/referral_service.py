@@ -25,17 +25,22 @@ class ReferralService:
         session: AsyncSession,
         *,
         bonus_signup: int = 3,
-        bonus_sub_1m: int = 5,
-        bonus_sub_3m: int = 15,
-        bonus_sub_12m: int = 45,
+        # Старые кварги оставлены для обратной совместимости с вызовами из admin/test
+        # кода. Реальный бонус берём из plan.referrer_bonus в SUBSCRIPTION_PLANS.
+        bonus_sub_1m: int | None = None,
+        bonus_sub_3m: int | None = None,
+        bonus_sub_12m: int | None = None,
     ) -> None:
         self._session = session
         self._bonus_signup = bonus_signup
-        self._bonus_sub: dict[str, int] = {
-            "1m": bonus_sub_1m,
-            "3m": bonus_sub_3m,
-            "12m": bonus_sub_12m,
-        }
+        # Оверрайды (если явно переданы) — иначе берём bonus из plan.referrer_bonus.
+        self._bonus_overrides: dict[str, int] = {}
+        if bonus_sub_1m is not None:
+            self._bonus_overrides["1m"] = bonus_sub_1m
+        if bonus_sub_3m is not None:
+            self._bonus_overrides["3m"] = bonus_sub_3m
+        if bonus_sub_12m is not None:
+            self._bonus_overrides["12m"] = bonus_sub_12m
 
     async def ensure_code(self, user: User) -> str:
         if user.referral_code:
@@ -97,10 +102,14 @@ class ReferralService:
     ) -> dict[str, Any] | None:
         if not referred.referred_by_id:
             return None
-        bonus = self._bonus_sub.get(plan_code)
+        plan = SUBSCRIPTION_PLANS.get(plan_code)
+        if plan is None:
+            return None
+        # Бонус — единый источник правды: plan.referrer_bonus.
+        # Оверрайд из settings (если явно передано) — для obratimosti.
+        bonus = self._bonus_overrides.get(plan_code, plan.referrer_bonus)
         if not bonus:
             return None
-        plan = SUBSCRIPTION_PLANS.get(plan_code)
         referrer = await self._session.get(User, referred.referred_by_id)
         if referrer is None:
             return None

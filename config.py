@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     top_value_bets: int = Field(15, ge=1, le=30)
     min_value_odds: float = Field(1.15, ge=1.01)
     min_value_percent: float = Field(2.0, ge=0.0)
-    min_value_probability: float = Field(0.90, ge=0.0, le=1.0)
+    min_value_probability: float = Field(0.35, ge=0.0, le=1.0)
     subscription_daily_limit: int = Field(40, ge=1, le=200)
 
     # ── Cache TTL ───────────────────────────────────────────
@@ -54,11 +54,23 @@ class Settings(BaseSettings):
     cache_ttl_leagues: int = Field(86400)
 
     # ── Database ────────────────────────────────────────────
+    # Можно задать любой поддерживаемый SQLAlchemy async URL, например
+    # postgresql+asyncpg://user:pass@host/db. По умолчанию — локальный SQLite.
     database_url: str = Field("sqlite+aiosqlite:///data/bot.db")
+
+    # ── Redis (опциональный кэш-бэкенд) ─────────────────────
+    # Если задан — сервисы будут использовать Redis для общего кэша,
+    # иначе работаем на in-memory TTLCache без изменений поведения.
+    redis_url: str | None = Field(default=None)
 
     # ── Logging ─────────────────────────────────────────────
     log_level: str = Field("INFO")
     log_file: str = Field("logs/bot.log")
+
+    # ── AI / Gemini ─────────────────────────────────────────
+    gemini_api_key: SecretStr | None = Field(default=None)
+    gemini_model: str = Field("gemini-2.5-flash-lite")
+    gemini_timeout: float = Field(15.0, ge=2.0, le=60.0)
 
     @field_validator("admin_ids", mode="before")
     @classmethod
@@ -83,6 +95,13 @@ class Settings(BaseSettings):
     @property
     def bot_token_value(self) -> str:
         return self.bot_token.get_secret_value()
+
+    @property
+    def gemini_api_key_value(self) -> str | None:
+        if self.gemini_api_key is None:
+            return None
+        secret = self.gemini_api_key.get_secret_value().strip()
+        return secret or None
 
     def ensure_dirs(self) -> None:
         (PROJECT_ROOT / "data").mkdir(parents=True, exist_ok=True)

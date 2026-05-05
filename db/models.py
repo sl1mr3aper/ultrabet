@@ -43,6 +43,10 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
     subscription_daily_quota: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Когда последний раз уведомили об истечении подписки (чтобы не спамить).
+    subscription_expired_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
 
     # Бесплатные / бонусные прогнозы
     free_predictions_left: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -220,6 +224,27 @@ class MatchResult(Base):
     )
 
 
+class PredictionCache(Base):
+    """Кэш сгенерированного отчёта по матчу.
+
+    Используется при повторных кликах: если кэш свежий, отдаём отчёт
+    мгновенно без пересчёта. Инвалидируется кнопкой «🔄 обновить».
+    """
+
+    __tablename__ = "prediction_cache"
+
+    game_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    rendered_text: Mapped[str] = mapped_column(Text, nullable=False)
+    is_live: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_finished: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class PredictionOutcome(Base):
     """Наш прогноз + реальный исход — для feedback loop self-learning."""
 
@@ -243,11 +268,131 @@ class PredictionOutcome(Base):
     )
 
 
+class LeagueStanding(Base):
+    """Кэш турнирной таблицы лиги для быстрых отрисовок и автообновления.
+
+    Заполняется фоном `LeagueStandingsService` (обновление раз в час)
+    и из inline-запросов (если кэш пуст). Используется в:
+    - UI-вкладке «📋 Турнирная таблица» (внутри лиги),
+    - корректировке вероятностей через `adjust_for_standings`.
+    """
+
+    __tablename__ = "league_standings"
+
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True,
+    )
+    league_id: Mapped[int] = mapped_column(
+        BigInteger, index=True, nullable=False,
+    )
+    season_uid: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True,
+    )
+    team_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    team_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    team_rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    played: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    wins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    draws: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    losses: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    goals_for: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    goals_against: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False,
+    )
+    goal_diff: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    country_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True,
+    )
+    league_name: Mapped[str | None] = mapped_column(
+        String(128), nullable=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "league_id", "team_id", name="uq_league_standing_team",
+        ),
+        Index("ix_league_standing_league_rank", "league_id", "team_rank"),
+    )
+
+
+class CalibrationSnapshot(Base):
+    """Сохранённая изотоническая кривая калибровки по рынку.
+
+    Обновляется ежедневно `CalibrationService`:
+    фитим `IsotonicRegression` на `(p_raw → hit 0/1)` из `PredictionOutcome`
+    за последние 90 дней по каждому market_key. Храним опорные точки
+    как JSON, потом делаем интерполяцию при инференсе.
+    """
+
+    __tablename__ = "calibration_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market_key: Mapped[str] = mapped_column(
+        String(48), nullable=False, index=True
+    )
+    # curve_json: [{ "x": float, "y": float }, ...], по возрастанию x
+    curve_json: Mapped[str] = mapped_column(Text, nullable=False)
+    fit_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    brier_before: Mapped[float | None] = mapped_column(nullable=True)
+    brier_after: Mapped[float | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
+
+
+class BacktestResult(Base):
+    """Результаты бэктеста за конкретную дату.
+
+    Сохраняется при каждом запуске анализа. Используется для
+    корректировки прогнозов — SelfLearner читает агрегированные
+    hit_rate / avg_brier и подтягивает калибровку.
+    """
+
+    __tablename__ = "backtest_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    game_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    home_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    away_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    league_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    market_key: Mapped[str] = mapped_column(String(48), nullable=False)
+    probability: Mapped[float] = mapped_column(nullable=False)
+    fair_odds: Mapped[float] = mapped_column(nullable=False)
+    home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("date", "game_id", name="uq_backtest_date_game"),
+        Index("ix_backtest_date_hit", "date", "hit"),
+    )
+
+
 __all__ = [
+    "BacktestResult",
     "Base",
+    "CalibrationSnapshot",
     "Feedback",
+    "LeagueStanding",
     "MatchResult",
     "PaymentLog",
+    "PredictionCache",
     "PredictionLog",
     "PredictionOutcome",
     "QueryHistory",

@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 # ── Базовая палитра / разделители ─────────────────────────────────────
-DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━"
-DIVIDER_THIN = "──────────────────────"
+# По просьбе пользователя декоративные линии-разделители убраны
+# из всех заголовков: вместо полосок просто пустая строка.
+DIVIDER = ""
+DIVIDER_THIN = ""
 BULLET = "•"
 ARROW = "➤"
 
@@ -47,14 +49,14 @@ ICON_BOOKMAKER = "🎰"
 
 
 def header(title: str, *, icon: str = ICON_BALL) -> str:
-    """Главный заголовок экрана."""
-    return f"{icon} *{title}*\n{DIVIDER}"
+    """Главный заголовок экрана (без декоративных полосок)."""
+    return f"{icon} *{title}*\n"
 
 
 def subheader(title: str, *, icon: str = "") -> str:
-    """Под-заголовок секции."""
+    """Под-заголовок секции (пустая строка как разделитель)."""
     prefix = f"{icon} " if icon else ""
-    return f"\n{prefix}*{title}*\n{DIVIDER_THIN}"
+    return f"\n{prefix}*{title}*\n"
 
 
 def section(text: str) -> str:

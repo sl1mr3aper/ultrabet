@@ -39,16 +39,13 @@ def _render_pick(idx: int, p: DailyPick) -> str:
     market_label = label_for(
         p.bet.market_key, home=p.result.home_name, away=p.result.away_name
     )
-    best = p.result.best_odds.get(p.bet.market_key) if p.result.best_odds else None
-    book = f" _{best[1]}_" if best else ""
     return (
         f"{idx:>2}. {_emoji_for(p.bet.value_percent)} "
         f"*{p.result.home_name} — {p.result.away_name}*\n"
         f"     {market_label}\n"
         f"     модель {p.bet.probability * 100:.1f}% · "
-        f"fair {p.bet.fair_odds:.2f} · "
-        f"букмекер{book} {p.bet.actual_odds:.2f} · "
-        f"*+{p.bet.value_percent:.2f}%*"
+        f"кф *{p.bet.fair_odds:.2f}* · "
+        f"валуй *+{p.bet.value_percent:.2f}%*"
     )
 
 
@@ -68,6 +65,13 @@ def _build_keyboard(page: Page) -> InlineKeyboardBuilder:
     pag = pagination_keyboard("dailypicks_page", page).inline_keyboard
     for row in pag:
         builder.row(*row)
+    from aiogram.types import InlineKeyboardButton
+
+    from bot.texts import Buttons
+    builder.row(
+        InlineKeyboardButton(text=Buttons.BACK, callback_data="nav:back"),
+        InlineKeyboardButton(text=Buttons.MAIN_MENU, callback_data="menu:home"),
+    )
     return builder
 
 
@@ -82,20 +86,93 @@ async def _render(
     today = (
         datetime.now(tz=UTC) + timedelta(hours=settings.timezone_offset)
     ).strftime("%Y-%m-%d")
-    if isinstance(target, Message) and page_index == 0:
-        await target.answer(
-            f"⏳ Сканирую матчи на {today}, это займёт около минуты…"
+    import asyncio
+
+    from bot.progress import (
+        animate_message,
+        cancel_keyboard,
+        clear_cancel,
+        minimal_loader,
+        register_cancel,
+    )
+
+    # Показываем бегущий прогресс-бар на первой странице — генерация
+    # прогнозов на день тянет SStats и может занять до минуты.
+    loading_msg = None
+    animator = None
+    if page_index == 0:
+        initial = minimal_loader(
+            f"Сканирую матчи на {today}", elapsed_seconds=0,
         )
+        if isinstance(target, CallbackQuery) and target.message:
+            try:
+                await target.message.edit_text(
+                    initial, parse_mode="Markdown",
+                    reply_markup=cancel_keyboard(),
+                )
+                loading_msg = target.message
+            except Exception:
+                loading_msg = await target.message.answer(
+                    initial, parse_mode="Markdown",
+                    reply_markup=cancel_keyboard(),
+                )
+        elif isinstance(target, Message):
+            loading_msg = await target.answer(
+                initial, parse_mode="Markdown",
+                reply_markup=cancel_keyboard(),
+            )
+        if loading_msg is not None:
+            animator = asyncio.create_task(
+                animate_message(
+                    loading_msg, f"Сканирую матчи на {today}",
+                    hint="_это займёт около минуты_",
+                )
+            )
+
     generator = DailyPicksGenerator(
         sstats,
         value_calculator=ValueCalculator(
             min_odds=settings.min_value_odds,
             min_value_percent=settings.min_value_percent,
+            min_probability=settings.min_value_probability,
         ),
     )
-    picks = await generator.for_date(
-        today, top_n=TOP_LIMIT, time_zone=settings.timezone_offset
+    work_task = asyncio.create_task(
+        generator.for_date(
+            today, top_n=TOP_LIMIT, time_zone=settings.timezone_offset,
+        )
     )
+    if loading_msg is not None:
+        # Регистрируем обе task'и — расчёт и анимацию. Cancel отменит сразу
+        # обе, чтобы animator не перезаписал главное меню.
+        if animator is not None:
+            register_cancel(
+                loading_msg.chat.id, loading_msg.message_id,
+                work_task, animator,
+            )
+        else:
+            register_cancel(
+                loading_msg.chat.id, loading_msg.message_id, work_task,
+            )
+    try:
+        picks = await work_task
+    except asyncio.CancelledError:
+        if animator is not None:
+            animator.cancel()
+            try:
+                await animator
+            except (asyncio.CancelledError, Exception):
+                pass
+        return
+    finally:
+        if loading_msg is not None:
+            clear_cancel(loading_msg.chat.id, loading_msg.message_id)
+        if animator is not None:
+            animator.cancel()
+            try:
+                await animator
+            except (asyncio.CancelledError, Exception):
+                pass
     title = header(f"Топ валуйных ставок на {today}", icon=ICON_TROPHY)
     if not picks:
         msg = f"{title}\nСегодня валуйных вариантов не нашлось."
@@ -117,7 +194,7 @@ async def _render(
         page,
         render_item=_render_pick,
         header_text=title,
-        footer_text="Формат: модель / fair-коэф / коэф букмекера = валуйность",
+        footer_text="Формат: модель / КФ (1/p) / валуйность",
     )
     builder = _build_keyboard(page)
     if isinstance(target, CallbackQuery):

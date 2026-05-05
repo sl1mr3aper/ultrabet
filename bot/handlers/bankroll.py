@@ -44,25 +44,23 @@ async def bankroll_cmd(message: Message) -> None:
         f"Банк: *{bankroll:.2f}*",
         f"Вероятность модели: *{prob_pct:.1f}%*",
         f"Коэффициент: *{odds:.2f}*",
-        f"Fair-коэф: *{1 / probability:.2f}*",
+        f"КФ (1/p): *{1 / probability:.2f}*",
         f"EV: *{(probability * odds - 1) * 100:+.2f}%*",
         "",
-        "*Рекомендации:*",
+        "*Рекомендуемый размер ставки:*",
     ]
-    for kind in (
-        StakeKind.FLAT,
-        StakeKind.PERCENT,
-        StakeKind.QUARTER_KELLY,
-        StakeKind.HALF_KELLY,
-        StakeKind.KELLY,
-    ):
+    for kind in (StakeKind.FLAT, StakeKind.PERCENT, StakeKind.KELLY):
         stake = compute_stake(si, kind)
         pct_of_bank = (stake / bankroll * 100.0) if bankroll > 0 else 0.0
         lines.append(
-            f"• {kind.value}: *{stake:.2f}* ({pct_of_bank:.2f}%) — "
+            f"• {kind.value}: *{stake:.2f}* (*{pct_of_bank:.2f}%* банка) — "
             f"_{describe(kind)}_"
         )
     lines.append("")
+    lines.append(
+        "_Келли — математически оптимальная доля банка на 1 ставку."
+        " Для меньшего риска пользуйся долей Келли вручную (÷ 2 или ÷ 4)._"
+    )
     lines.append(
         "⚠️ Это калькулятор, не совет. Max cap 10% банка для защиты."
     )

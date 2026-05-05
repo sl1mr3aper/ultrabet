@@ -37,21 +37,25 @@ async def _send_referral(
     *,
     edit: bool = False,
 ) -> None:
+    from services.subscription_service import SUBSCRIPTION_PLANS
+
     service = ReferralService(
         session,
         bonus_signup=settings.referral_bonus_signup,
-        bonus_sub_1m=settings.referral_bonus_sub_1m,
-        bonus_sub_3m=settings.referral_bonus_sub_3m,
-        bonus_sub_12m=settings.referral_bonus_sub_12m,
     )
     code = await service.ensure_code(user)
     link = service.build_link(settings.bot_username, code)
     stats = await service.stats(user)
+    # Бонусы за каждый тариф собираем динамически из плана.
+    plans_lines = [
+        f"• {p.title} → +{p.referrer_bonus}"
+        for p in SUBSCRIPTION_PLANS.values()
+        if p.referrer_bonus > 0
+    ]
+    plans_block = "\n".join(plans_lines)
     text = REFERRAL_HEADER.format(
         signup=settings.referral_bonus_signup,
-        m1=settings.referral_bonus_sub_1m,
-        m3=settings.referral_bonus_sub_3m,
-        m12=settings.referral_bonus_sub_12m,
+        plans_block=plans_block,
         link=link,
         total=stats["total_referred"],
         paid=stats["paid_referred"],

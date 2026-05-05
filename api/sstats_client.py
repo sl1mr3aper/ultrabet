@@ -50,21 +50,43 @@ class SStatsClient:
         self._base_url = base_url.rstrip("/")
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._max_retries = max_retries
-        self._min_interval = 1.0 / max(rate_limit_per_second, 0.1)
+        self._base_interval = 1.0 / max(rate_limit_per_second, 0.1)
+        self._min_interval = self._base_interval
         self._last_request_at = 0.0
         self._semaphore = asyncio.Semaphore(8)
         self._lock = asyncio.Lock()
         self._cache = cache or APICache()
+        # Глобальный бэкофф: при 429 все запросы ждут вместе.
+        self._rate_limit_until = 0.0  # monotonic timestamp
+        # Период «остывания» после 429: пока он не истёк, держим
+        # увеличенный min_interval. После истечения возвращаемся к базе,
+        # чтобы не тормозить запросы навечно.
+        self._cooldown_until = 0.0
 
     @property
     def cache(self) -> APICache:
         return self._cache
 
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        """HTTP-сессия (для внешних источников кфов и т.п.)."""
+        return self._session
+
     # ── Internal helpers ────────────────────────────────────
 
     async def _throttle(self) -> None:
+        # Глобальный бэкофф: если были 429, ждём до указанного момента.
+        now = time.monotonic()
+        global_wait = self._rate_limit_until - now
+        if global_wait > 0:
+            await asyncio.sleep(global_wait)
         async with self._lock:
             now = time.monotonic()
+            # По окончании «периода остывания» после 429 возвращаем
+            # базовый интервал — иначе после одного лимита клиент остался
+            # бы медленным навсегда.
+            if self._min_interval > self._base_interval and now >= self._cooldown_until:
+                self._min_interval = self._base_interval
             wait = self._min_interval - (now - self._last_request_at)
             if wait > 0:
                 await asyncio.sleep(wait)
@@ -121,9 +143,30 @@ class SStatsClient:
                     if resp.status == 404:
                         raise APINotFoundError(f"{method} {path} → 404")
                     if resp.status == 429:
-                        retry_after = float(resp.headers.get("Retry-After", "5") or 5)
+                        # По просьбе: при rate-limit даём SStats отдохнуть
+                        # не меньше 10 секунд. Retry-After от сервера
+                        # принимается, если он больше, иначе — 10с пола.
+                        _hdr = resp.headers.get("Retry-After", "10") or "10"
+                        try:
+                            retry_after = float(_hdr)
+                        except ValueError:
+                            retry_after = 10.0
+                        retry_after = max(retry_after, 10.0)
+                        resume_at = time.monotonic() + retry_after
+                        # Глобальный бэкофф: все параллельные запросы увидят
+                        # это и подождут вместе, а не задолбят API ещё раз.
+                        self._rate_limit_until = max(
+                            self._rate_limit_until, resume_at,
+                        )
+                        # На время остывания держим интервал между
+                        # запросами >=1.5с (дольше, чем до срабатывания
+                        # лимита), чтобы сразу не схватить 429 ещё раз.
+                        self._min_interval = max(
+                            self._min_interval, self._base_interval * 3, 1.5,
+                        )
+                        self._cooldown_until = resume_at + 30.0
                         logger.warning(
-                            "SStats rate-limit hit at {} attempt={}; sleeping {:.1f}s",
+                            "SStats 429 at {} attempt={}; global pause {:.1f}s",
                             path, attempt, retry_after,
                         )
                         await asyncio.sleep(retry_after)
@@ -236,7 +279,7 @@ class SStatsClient:
         limit: int = 100,
         order: int = -1,
         time_zone: int = 3,
-        cache_ttl: float | None = None,
+        cache_ttl: float | None = 600.0,
     ) -> list[JSONDict]:
         params: dict[str, Any] = {
             "Id": ids,
@@ -261,13 +304,20 @@ class SStatsClient:
             "Order": order,
             "TimeZone": time_zone,
         }
+        # Для live-запросов не держим кэш долго — данные быстро
+        # устаревают (счёт, статус). Для «сегодня/завтра/лиги» 10 минут
+        # экономят десятки лишних запросов к SStats на пагинации/кликах
+        # — расписание матчей в течение дня практически не меняется.
+        effective_ttl = cache_ttl
+        if live is True and effective_ttl is not None and effective_ttl > 30.0:
+            effective_ttl = 30.0
         cache_key = None
-        if cache_ttl:
+        if effective_ttl:
             cache_key = "games:list:" + ",".join(
                 f"{k}={params[k]}" for k in sorted(params) if params[k] is not None
             )
         data = await self._get(
-            "/Games/list", params=params, cache_key=cache_key, cache_ttl=cache_ttl
+            "/Games/list", params=params, cache_key=cache_key, cache_ttl=effective_ttl
         )
         return list(data) if isinstance(data, list) else []
 
@@ -314,6 +364,31 @@ class SStatsClient:
                 params={"seasonUid": season_uid},
                 cache_key=f"season-table:{season_uid}",
                 cache_ttl=1800,
+            )
+        except APINotFoundError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    async def get_season_table_by_league(
+        self,
+        *,
+        year: int,
+        league_id: int,
+        cache_ttl: float = 3600,
+    ) -> JSONDict | None:
+        """Турнирная таблица лиги за конкретный сезон-год.
+
+        Эндпоинт `/Games/season-table` принимает `year`/`league` (а не
+        `seasonUid`) и возвращает `{"<teamId>": {...stats...}}`. Это
+        стабильный путь получить standings; через /Ls/Seasons часто
+        приходит пустой список.
+        """
+        try:
+            data = await self._get(
+                "/Games/season-table",
+                params={"year": int(year), "league": int(league_id)},
+                cache_key=f"season-table-league:{year}:{league_id}",
+                cache_ttl=cache_ttl,
             )
         except APINotFoundError:
             return None
@@ -623,8 +698,11 @@ class SStatsClient:
             _safe(_last_games, None),
             _safe(_summary, None),
             _safe(_profits, None),
+            _safe(lambda: self.get_live_odds(game_id), None),
         )
-        game, glicko, odds, injuries, last_games, summary_text, profits = results
+        game, glicko, odds, injuries, last_games, summary_text, profits, live_odds = (
+            results
+        )
 
         # Подгружаем сезонную таблицу, если есть season uid в game
         season_table: JSONDict | None = None
@@ -643,6 +721,7 @@ class SStatsClient:
             "game": game,
             "glicko": glicko,
             "odds": odds,
+            "live_odds": live_odds,
             "injuries": injuries,
             "last_games": last_games,
             "summary": summary_text,

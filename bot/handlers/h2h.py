@@ -71,6 +71,13 @@ async def _send_page(
     pag = pagination_keyboard("h2h_page", page).inline_keyboard
     for row in pag:
         builder.row(*row)
+    from aiogram.types import InlineKeyboardButton
+
+    from bot.texts import Buttons
+    builder.row(
+        InlineKeyboardButton(text=Buttons.BACK, callback_data="nav:back"),
+        InlineKeyboardButton(text=Buttons.MAIN_MENU, callback_data="menu:home"),
+    )
     kb = builder.as_markup()
     if isinstance(target, CallbackQuery):
         if target.message:

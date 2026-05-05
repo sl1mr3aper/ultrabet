@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from math import log
@@ -25,7 +26,7 @@ from loguru import logger
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import MatchResult, PredictionOutcome
+from db.models import BacktestResult, MatchResult, PredictionOutcome
 
 
 @dataclass(slots=True)
@@ -148,7 +149,107 @@ class SelfLearner:
             snap.calibration = bins
             snap.market_hit_rates = {k: (v[1], v[0]) for k, v in market_stat.items()}
             self._latest = snap
+            # Обновляем адаптивные веса ансамбля на основе Brier score
+            try:
+                from core.ensemble import update_adaptive_weights
+                update_adaptive_weights(
+                    glicko_brier=snap.brier,
+                    poisson_brier=snap.brier,
+                )
+                logger.info(
+                    "SelfLearner: обновлены веса ансамбля, "
+                    "brier={:.4f}, samples={}",
+                    snap.brier, snap.samples,
+                )
+            except Exception as exc:
+                logger.debug("SelfLearner: ошибка обновления весов: {}", exc)
+            # AI-калибровочный анализ (best-effort, не блокирует)
+            try:
+                import os
+
+                from services.ai_calibration import ai_calibration_check
+                _api_key = os.environ.get("GEMINI_API_KEY", "")
+                if _api_key and snap.samples >= 20:
+                    _ai_task = asyncio.create_task(
+                        ai_calibration_check(snap, _api_key)
+                    )
+                    _ai_task.add_done_callback(lambda t: t.result() if not t.cancelled() else None)
+            except Exception as exc:
+                logger.debug("SelfLearner: AI calibration skip: {}", exc)
             return snap
+        finally:
+            await session.close()
+
+    async def incorporate_backtest(self, *, days: int = 30) -> int:
+        """Читаем BacktestResult за последние N дней, вносим в калибровку.
+
+        Записи backtest_results содержат probability + hit → используем
+        для дополнительного уточнения корзин калибровки.
+        Возвращает количество новых записей, которые были внесены.
+        """
+        session: AsyncSession = self._session_factory()
+        count = 0
+        try:
+            cutoff = datetime.now(tz=UTC) - timedelta(days=days)
+            rows = await session.scalars(
+                select(BacktestResult).where(
+                    and_(
+                        BacktestResult.hit.is_not(None),
+                        BacktestResult.created_at >= cutoff,
+                    )
+                )
+            )
+            bt_rows = list(rows)
+            if not bt_rows:
+                return 0
+
+            snap = self._latest
+            if snap is None:
+                snap = await self.compute_snapshot(days=days)
+
+            for row in bt_rows:
+                p = max(1e-6, min(1 - 1e-6, row.probability))
+                y = 1 if row.hit else 0
+                for b in snap.calibration:
+                    if b.lower <= p < b.upper or (b.upper == 1.0 and p >= 0.9):
+                        b.count += 1
+                        b.hits += y
+                        count += 1
+                        break
+
+            if count > 0:
+                # Пересчитаем Brier
+                brier_sum = 0.0
+                for row in bt_rows:
+                    p = max(1e-6, min(1 - 1e-6, row.probability))
+                    y = 1 if row.hit else 0
+                    brier_sum += (p - y) ** 2
+                bt_brier = brier_sum / len(bt_rows)
+                # Смешиваем с текущим Brier: 70% PredictionOutcome + 30% backtest
+                if snap.samples > 0:
+                    snap.brier = 0.7 * snap.brier + 0.3 * bt_brier
+                else:
+                    snap.brier = bt_brier
+                snap.samples += count
+
+                try:
+                    from core.ensemble import update_adaptive_weights
+                    update_adaptive_weights(
+                        glicko_brier=snap.brier,
+                        poisson_brier=snap.brier,
+                    )
+                    logger.info(
+                        "SelfLearner: backtest корректировка, "
+                        "brier={:.4f}, +{} samples",
+                        snap.brier, count,
+                    )
+                except Exception as exc:
+                    logger.debug("SelfLearner: backtest weights error: {}", exc)
+
+            return count
+        except Exception as exc:
+            logger.exception("SelfLearner.incorporate_backtest failed: {}", exc)
+            return 0
         finally:
             await session.close()
 

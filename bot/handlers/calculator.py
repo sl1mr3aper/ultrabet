@@ -32,17 +32,21 @@ async def calc_command(message: Message) -> None:
     rec = recommend_stake(prob, odds)
     be = break_even_probability(odds)
     lines = [
-        "🧮 *Калькулятор Kelly*",
-        f"Банкролл: {bankroll:.2f}",
+        "🧮 *Калькулятор Келли*",
+        f"Банк: {bankroll:.2f}",
         f"Вероятность: {prob*100:.1f}%",
         f"Коэф: {odds:.2f}",
         f"Безубыточный порог: {be*100:.1f}%",
         f"EV: *{rec.expected_value_pct:+.2f}%*",
         "",
-        f"Full Kelly:   {rec.full_kelly_fraction*100:.2f}% ({rec.stake_full(bankroll):.2f})",
-        f"Half Kelly:   {rec.half_kelly_fraction*100:.2f}% ({rec.stake_half(bankroll):.2f})",
-        f"Quarter K.:   {rec.quarter_kelly_fraction*100:.2f}% ({rec.stake_quarter(bankroll):.2f})",
-        f"Flat 2%:       {rec.flat_fraction*100:.2f}% ({rec.stake_flat(bankroll):.2f})",
+        f"💰 Келли: *{rec.full_kelly_fraction*100:.2f}%* банка "
+        f"({rec.stake_full(bankroll):.2f})",
+        f"📊 Flat 2%: *{rec.flat_fraction*100:.2f}%* банка "
+        f"({rec.stake_flat(bankroll):.2f})",
+        "",
+        "_Келли — оптимальная доля банка на 1 ставку при заданной"
+        " вероятности и кф. Для меньшего риска можно ставить"
+        " половину/четверть от этого числа._",
     ]
     await message.answer(
         "\n".join(lines), parse_mode="Markdown", reply_markup=main_menu_keyboard()

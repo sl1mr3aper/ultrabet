@@ -58,6 +58,13 @@ def _pag_kb(prefix: str, page: Page) -> InlineKeyboardBuilder:
     pag = pagination_keyboard(prefix, page).inline_keyboard
     for row in pag:
         builder.row(*row)
+    from aiogram.types import InlineKeyboardButton
+
+    from bot.texts import Buttons
+    builder.row(
+        InlineKeyboardButton(text=Buttons.BACK, callback_data="nav:back"),
+        InlineKeyboardButton(text=Buttons.MAIN_MENU, callback_data="menu:home"),
+    )
     return builder
 
 
@@ -279,7 +286,7 @@ async def _send_bookmakers_page(
     text = format_paginated(
         page,
         render_item=_render_bookmaker,
-        header_text=header(f"Букмекеры SStats (всего {len(items)})", icon=ICON_BOOKMAKER),
+        header_text=header(f"Букмекеры (всего {len(items)})", icon=ICON_BOOKMAKER),
     )
     kb = _pag_kb("book_page", page).as_markup()
     if isinstance(target, CallbackQuery):

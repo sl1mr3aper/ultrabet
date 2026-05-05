@@ -12,12 +12,12 @@ TEMPLATES: dict[str, str] = {
     "welcome": """
 👋 Привет, ${name}!
 
-Ты в UltraBet — боте для футбольных прогнозов на базе данных SStats API.
+Ты в UltraBet — боте для футбольных прогнозов с детальной аналитикой.
 
 Что я умею:
 • /matches — матчи сегодня/завтра с пагинацией
 • /leagues — все лиги мира
-• /dailypicks — топ-5 пикс дня
+• /dailypicks — топ-5 главных прогнозов дня
 • /predict <id> — прогноз на конкретный матч
 • /simulate <xg1> <xg2> — Monte-Carlo симуляция
 • /arb2, /arb3 — поиск арбитражей
@@ -52,11 +52,11 @@ ${icon} *Прогноз на матч*
 • xG ожидаемые: ${home} ${xg_home} — ${xg_away} ${away}
 """.strip(),
     "value_bet_block_header": """
-💎 *Валуйные ставки (сортировка по value ↓):*
+💎 *Валуйные ставки (по валуйности ↓):*
 """.strip(),
     "value_bet_row": """
 ${rank}. *${market_name}* — ${book}
-   p=${prob}% · fair=${fair} · coef=*${odds}* · +${value}% 🔥
+   вер.=${prob}% · честн.=${fair} · кф=*${odds}* · +${value}% 🔥
 """.strip(),
     "subscription_offer": """
 🎁 *Подписка UltraBet*
@@ -89,7 +89,7 @@ ${rank}. *${market_name}* — ${book}
 Продли, чтобы снова получать:
 • неограниченные прогнозы
 • валуйные ставки с деталями
-• ежедневные пикс
+• ежедневные главные прогнозы
 • live-мониторинг
 
 Купить: /subscribe

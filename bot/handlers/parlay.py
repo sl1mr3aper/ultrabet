@@ -1,7 +1,7 @@
 """Команда /parlay — сборка и анализ экспресса.
 
 Формат: /parlay odd1 odd2 odd3 ... (просто перемножение)
-Или:   /parlay p1:o1 p2:o2 p3:o3 — с нашими вероятностями для расчёта EV.
+Или:   /parlay p1:o1 p2:o2 p3:o3 — с нашими вероятностями для расчёта валуйности.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ async def parlay_cmd(message: Message) -> None:
         await message.answer(
             "Использование:\n"
             "`/parlay 2.0 1.8 2.5` — просто коэфы\n"
-            "`/parlay 0.6:2.0 0.55:1.8` — вероятности:коэфы (для EV)",
+            "`/parlay 0.6:2.0 0.55:1.8` — вероятности:коэфы (для валуйности)",
             parse_mode="Markdown",
         )
         return
@@ -42,20 +42,20 @@ async def parlay_cmd(message: Message) -> None:
         legs.append(ParlayLeg(name=token, probability=prob, odds=odds))
     result = calculate_parlay(legs)
     if result is None:
-        await message.answer("Некорректные данные. Проверь коэф > 1 и 0 < prob ≤ 1.")
+        await message.answer("Некорректные данные. Проверь коэф > 1 и 0 < вер. ≤ 1.")
         return
     lines = [
         header(f"Экспресс из {result.leg_count} событий", icon=ICON_TARGET),
         f"Итоговый коэф: *{result.total_odds:.2f}*",
         f"Итоговая вероятность: *{result.combined_probability * 100:.2f}%*",
-        f"Fair-коэф: *{result.fair_total_odds:.2f}*",
-        f"EV: *{result.value_percent:+.2f}%*",
+        f"КФ (1/p): *{result.fair_total_odds:.2f}*",
+        f"Валуйность: *{result.value_percent:+.2f}%*",
         f"Риск: *{describe_risk(result)}*",
         "",
     ]
     for leg in legs:
         lines.append(
-            f"• `{leg.name}` → prob={leg.probability*100:.1f}%, odds={leg.odds:.2f}"
+            f"• `{leg.name}` → вер.={leg.probability*100:.1f}%, кф={leg.odds:.2f}"
         )
     await message.answer(
         "\n".join(lines),

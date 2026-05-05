@@ -16,6 +16,7 @@ class PlanCode(StrEnum):
     WEEK_1 = "1w"
     MONTH_1 = "1m"
     MONTH_3 = "3m"
+    MONTH_6 = "6m"
     MONTH_12 = "12m"
 
 
@@ -44,12 +45,12 @@ _DAILY_QUOTA = 40
 
 SUBSCRIPTION_PLANS: dict[str, SubscriptionPlan] = {
     PlanCode.DAY_1: SubscriptionPlan(
-        PlanCode.DAY_1, "1 день", 1, _DAILY_QUOTA, 0,
+        PlanCode.DAY_1, "1 день", 1, _DAILY_QUOTA, 1,
         stars_price=50, badge="🎟",
         description="Тест-драйв на сутки: до 40 прогнозов.",
     ),
     PlanCode.WEEK_1: SubscriptionPlan(
-        PlanCode.WEEK_1, "1 неделя", 7, _DAILY_QUOTA, 2,
+        PlanCode.WEEK_1, "1 неделя", 7, _DAILY_QUOTA, 3,
         stars_price=250, badge="🎫",
         description="До 40 прогнозов в день + приоритетная очередь.",
     ),
@@ -63,8 +64,13 @@ SUBSCRIPTION_PLANS: dict[str, SubscriptionPlan] = {
         stars_price=2400, badge="🔥",
         description="До 40 прогнозов в день + расширенная аналитика и экспорт.",
     ),
+    PlanCode.MONTH_6: SubscriptionPlan(
+        PlanCode.MONTH_6, "6 месяцев", 180, _DAILY_QUOTA, 30,
+        stars_price=4500, badge="🏆",
+        description="До 40 прогнозов в день + всё из 3-месячного плана.",
+    ),
     PlanCode.MONTH_12: SubscriptionPlan(
-        PlanCode.MONTH_12, "12 месяцев", 365, _DAILY_QUOTA, 45,
+        PlanCode.MONTH_12, "12 месяцев", 365, _DAILY_QUOTA, 60,
         stars_price=8400, badge="🌟",
         description="До 40 прогнозов в день без ограничений по функциям.",
     ),

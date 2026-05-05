@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from loguru import logger
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -21,12 +22,44 @@ class Database:
 
     def __init__(self, url: str, *, echo: bool = False) -> None:
         self._url = url
-        self._engine: AsyncEngine = create_async_engine(
-            url,
-            echo=echo,
-            future=True,
-            pool_pre_ping=True,
-        )
+        # Для Postgres/MySQL задействуем connection pool с разумными дефолтами;
+        # для SQLite (однопроцессный режим) pool-опции не применяются.
+        engine_kwargs: dict = {
+            "echo": echo,
+            "future": True,
+            "pool_pre_ping": True,
+        }
+        if url.startswith("sqlite"):
+            # Для aiosqlite увеличиваем timeout ожидания лока (по умолчанию
+            # 5с — на бот с конкурентными фоновыми задачами этого мало и
+            # периодически бросается «database is locked»).
+            engine_kwargs.update(
+                {"connect_args": {"timeout": 60.0}},
+            )
+        else:
+            engine_kwargs.update(
+                {
+                    "pool_size": 10,
+                    "max_overflow": 10,
+                    "pool_recycle": 3600,
+                }
+            )
+        self._engine: AsyncEngine = create_async_engine(url, **engine_kwargs)
+        if url.startswith("sqlite"):
+            # Включаем WAL (writer не блокирует читателей) и NORMAL
+            # synchronous — стандартная рекомендация SQLite для
+            # высококонкурентной записи при сохранении устойчивости к
+            # сбоям процесса.
+            @event.listens_for(self._engine.sync_engine, "connect")
+            def _sqlite_pragmas(dbapi_connection, _record) -> None:
+                cursor = dbapi_connection.cursor()
+                try:
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                    cursor.execute("PRAGMA synchronous=NORMAL")
+                    cursor.execute("PRAGMA busy_timeout=60000")
+                    cursor.execute("PRAGMA foreign_keys=ON")
+                finally:
+                    cursor.close()
         self._session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
             self._engine,
             expire_on_commit=False,
@@ -44,6 +77,37 @@ class Database:
     async def init_models(self) -> None:
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # Лёгкая идемпотентная миграция для SQLite: добавляем колонки,
+            # появившиеся после первой инициализации БД, чтобы не ронять
+            # бот при апдейте кода без ручного `alembic upgrade`.
+            if self._url.startswith("sqlite"):
+                from sqlalchemy import text
+
+                try:
+                    cols = await conn.execute(
+                        text("PRAGMA table_info(users)"),
+                    )
+                    existing = {row[1] for row in cols.fetchall()}
+                    add_columns = [
+                        (
+                            "subscription_expired_notified_at",
+                            "DATETIME",
+                        ),
+                    ]
+                    for col_name, col_type in add_columns:
+                        if col_name not in existing:
+                            await conn.execute(
+                                text(
+                                    f"ALTER TABLE users ADD COLUMN "
+                                    f"{col_name} {col_type}",
+                                ),
+                            )
+                            logger.info(
+                                "DB migration: added column users.{}",
+                                col_name,
+                            )
+                except Exception as exc:
+                    logger.warning("Soft DB migration skipped: {}", exc)
         logger.info("Database initialized at {}", self._url)
 
     @asynccontextmanager

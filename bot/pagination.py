@@ -63,7 +63,11 @@ def format_paginated(
     chunks = page.slice()
     lines: list[str] = []
     if header_text:
-        lines.append(header_text)
+        # Нормализуем хвост: внутри `header_text` могут быть `\n`, но между
+        # шапкой и контентом нужна РОВНО ОДНА пустая строка, не больше.
+        h = header_text.rstrip("\n")
+        lines.append(h)
+        lines.append("")  # одна пустая строка
     start_offset = page.page_index * page.page_size
     for i, item in enumerate(chunks):
         global_index = base_index + start_offset + i
@@ -74,7 +78,12 @@ def format_paginated(
     lines.append(f"Страница {page.page_index + 1} из {page.total_pages}")
     if footer_text:
         lines.append(footer_text)
-    return "\n".join(lines)
+    # Финальная страховка: коллапсируем 3+ переноса в 2 (т.е. макс. 1 пустая
+    # строка подряд), глобально. Это убирает любые двойные пустые строки.
+    out = "\n".join(lines)
+    import re
+
+    return re.sub(r"\n{3,}", "\n\n", out)
 
 
 def pagination_keyboard(
@@ -82,9 +91,16 @@ def pagination_keyboard(
     page: Page[Any],
     *,
     extra_payload: str = "",
-    home_callback: str | None = "menu_main",
+    home_callback: str | None = None,
 ) -> InlineKeyboardMarkup:
-    """Строит клавиатуру с ◀ Назад / X / Y / ▶ Вперёд / 🏠 Меню."""
+    """Строит клавиатуру с ◀ Назад / X / Y / ▶ Вперёд.
+
+    Кнопка «🏠 Меню» больше не рисуется по умолчанию — все экраны,
+    использующие пагинацию, уже содержат в нижнем ряду явную кнопку
+    «🏠 Главное меню», поэтому вторая кнопка меню в той же клавиатуре
+    была визуальным дублем. Если для какого-то экрана нужна локальная
+    home-кнопка — можно явно передать `home_callback`.
+    """
     builder = InlineKeyboardBuilder()
     if page.has_prev:
         builder.button(
@@ -123,9 +139,59 @@ def parse_pagination_callback(data: str, prefix: str) -> tuple[int, str]:
         return 0, extra
 
 
+def parse_page_input(
+    text: str, total_pages: int,
+) -> tuple[int | None, str]:
+    """Единый валидатор ручного ввода номера страницы.
+
+    Используется во всех «🔢 Перейти к странице …» сценариях, чтобы:
+    - не падать на нечисловом вводе,
+    - не открывать пустую страницу за пределами диапазона,
+    - вернуть пользователю понятный лимит (`макс. страница = N`).
+
+    Принимает 1-based номер страницы (как пишет пользователь). Возвращает
+    `(page_index_zero_based, "")` при успехе или `(None, error_message)`
+    при ошибке.
+    """
+    cleaned = (text or "").strip()
+    total_pages = max(1, int(total_pages))
+    if not cleaned:
+        return None, (
+            f"Введи номер страницы числом от 1 до *{total_pages}*."
+        )
+    # Допускаем «3.», «  4», «#5» — оставляем только цифры в начале.
+    digits = ""
+    for ch in cleaned:
+        if ch.isdigit():
+            digits += ch
+        else:
+            break
+    if not digits:
+        return None, (
+            f"Нужно одно *число* от 1 до *{total_pages}* — номер страницы."
+        )
+    try:
+        n = int(digits)
+    except ValueError:
+        return None, (
+            f"Не похоже на число. Введи от 1 до *{total_pages}*."
+        )
+    if n < 1:
+        return None, (
+            f"Номер страницы начинается с *1*. Доступно до *{total_pages}*."
+        )
+    if n > total_pages:
+        return None, (
+            f"⚠️ Максимум *{total_pages}* стр. — у тебя меньше данных. "
+            f"Введи номер от 1 до *{total_pages}*."
+        )
+    return n - 1, ""
+
+
 __all__ = [
     "Page",
     "format_paginated",
     "pagination_keyboard",
+    "parse_page_input",
     "parse_pagination_callback",
 ]
