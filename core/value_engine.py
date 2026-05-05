@@ -29,15 +29,19 @@ from dataclasses import dataclass
 
 # ── Пороги «вердикта» ─────────────────────────────────────────
 # Минимальная вероятность модели, ниже которой пик в принципе не идёт
-# в выборку «брать». 35% — статистически разумно для одиночников, чтобы
-# не гнаться за фантастическими кфами при p≈10%.
-MIN_PROB_TAKE = 0.35
+# в выборку «брать». 45% — после анализа исторических CSV (выбрасывали
+# `Carabobo`, `Cobreloa`, `River Plate Asunción` с p ≈ 40-49%, все LOSS).
+# Подняли с 0.35 → 0.45 чтобы не показывать «брать» с реальным шансом
+# проиграть >55%.
+MIN_PROB_TAKE = 0.45
 # Минимальная валуйность (EV %), которую считаем «настоящей валуйкой».
-MIN_VALUE_PCT_TAKE = 3.0
+# Подняли 3.0 → 5.0 — на коротких выборках 3% EV не отличим от шума,
+# а на длинных дистанциях 5% EV даёт стабильный +ROI после маржи.
+MIN_VALUE_PCT_TAKE = 5.0
 # «Осторожно» — между «брать» и «не брать»: пик имеет небольшую
-# валуйность или вероятность чуть ниже 35%.
-MIN_PROB_CAUTION = 0.28
-MIN_VALUE_PCT_CAUTION = 1.0
+# валуйность или вероятность чуть ниже основного порога.
+MIN_PROB_CAUTION = 0.38
+MIN_VALUE_PCT_CAUTION = 2.0
 # Максимальная разумная вероятность, чтобы не плодить «П1 при 99%»
 # из-за коллапса калибратора.
 MAX_PROB_SANE = 0.97
@@ -138,8 +142,15 @@ def score_pick(
     market_key: str,
     probability: float,
     odds: float | None,
+    market_blocked: bool = False,
 ) -> PickScore:
-    """Оценить один пик — вернуть `PickScore`."""
+    """Оценить один пик — вернуть `PickScore`.
+
+    Параметр ``market_blocked`` (по умолчанию False) — если True, вердикт
+    «брать» автоматически понижается до «осторожно» независимо от EV.
+    Используется `MarketFilter` для блокировки рынков с систематически
+    отрицательным CLV.
+    """
     p = max(0.0, min(1.0, float(probability)))
     o_raw = float(odds) if odds is not None and odds > 0 else None
     fair = _fair_odds(p) if p > 0 else 0.0
@@ -149,6 +160,8 @@ def score_pick(
     ev = _ev_pct(p, o)
     kelly = _kelly(p, o) if o is not None else 0.0
     verdict = _verdict(p, ev, kelly)
+    if market_blocked and verdict == "брать":
+        verdict = "осторожно"
     composite = _composite_score(p, o)
     return PickScore(
         market_key=market_key,
@@ -169,6 +182,7 @@ def select_best_pick(
     *,
     accept_only: bool = True,
     fallback_to_caution: bool = True,
+    market_filter: object | None = None,
 ) -> PickScore | None:
     """Найти лучший пик по матчу.
 
@@ -178,6 +192,11 @@ def select_best_pick(
          из них с максимальным composite score.
       3) Иначе при `fallback_to_caution=True` — берём «осторожно».
       4) Иначе — None.
+
+    Параметр ``market_filter`` (опциональный) — объект с методом
+    ``is_blocked(market_key, model_prob) -> bool``: если возвращает True,
+    пик не получит вердикт «брать» (понижается до «осторожно»). Это
+    блокирует рынки с систематически отрицательным CLV (см. MarketFilter).
     """
     if not probabilities:
         return None
@@ -197,8 +216,19 @@ def select_best_pick(
             )
         except (TypeError, ValueError):
             odd_f = None
+        blocked = False
+        if market_filter is not None:
+            try:
+                blocked = bool(market_filter.is_blocked(key, float(prob)))  # type: ignore[attr-defined]
+            except Exception:
+                blocked = False
         scored.append(
-            score_pick(market_key=key, probability=float(prob), odds=odd_f)
+            score_pick(
+                market_key=key,
+                probability=float(prob),
+                odds=odd_f,
+                market_blocked=blocked,
+            )
         )
 
     if not scored:

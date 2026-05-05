@@ -255,6 +255,15 @@ class PredictionOutcome(Base):
     market_key: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
     predicted_probability: Mapped[float] = mapped_column(nullable=False)
     actual_odds: Mapped[float | None] = mapped_column(nullable=True)
+    # Закрывающий кф Pinnacle/Betfair (фиксируем за 5 мин до старта).
+    # Используется для расчёта CLV = prob × closing_odds - 1.
+    closing_odds: Mapped[float | None] = mapped_column(nullable=True)
+    # Closing Line Value: насколько наш прогноз превзошёл рыночную «правду».
+    # >0 → бьём рынок (потенциально + ROI), <0 → проигрываем рынку.
+    clv: Mapped[float | None] = mapped_column(nullable=True)
+    # Лига и рынок-категория для per-league/per-market калибровки.
+    league_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    market_category: Mapped[str | None] = mapped_column(String(24), nullable=True)
     # итог: True = рынок сыграл, False = нет, None = пока неизвестно
     hit: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -352,6 +361,76 @@ class CalibrationSnapshot(Base):
     )
 
 
+class LeagueAggregate(Base):
+    """Агрегаты лиги, считающиеся фоном из MatchResult.
+
+    Используется для:
+    * подстановки `league_avg_total` в xG-расчёт (вместо хардкода 2.7),
+    * показа «Ср. тотал лиги» в отчёте (даже когда SStats не отдал
+      `season_table`),
+    * `btts_rate` / `home_win_rate` / `over_25_rate` для регулятора и
+      market_filter (не использовать рынки, исторически проигрывающие).
+
+    Перерасчёт раз в 6 часов, окно — все доступные `MatchResult` (или
+    последние `lookback_games` если будем сужать). Уникальность по
+    `league_id` (не по сезону) — для большинства лиг этого достаточно.
+    """
+
+    __tablename__ = "league_aggregates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    league_id: Mapped[int] = mapped_column(
+        BigInteger, unique=True, index=True, nullable=False,
+    )
+    league_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    country_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    n_matches: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    avg_total_goals: Mapped[float | None] = mapped_column(nullable=True)
+    avg_home_goals: Mapped[float | None] = mapped_column(nullable=True)
+    avg_away_goals: Mapped[float | None] = mapped_column(nullable=True)
+    btts_rate: Mapped[float | None] = mapped_column(nullable=True)
+    home_win_rate: Mapped[float | None] = mapped_column(nullable=True)
+    draw_rate: Mapped[float | None] = mapped_column(nullable=True)
+    over_25_rate: Mapped[float | None] = mapped_column(nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class PinnacleClosingOdds(Base):
+    """Снимок закрывающих кф Pinnacle/Betfair для CLV-метрики.
+
+    Заполняется фоновой задачей за ~5 минут до старта матча. Используется
+    `SelfLearner` для расчёта Closing Line Value (`prob × close_odds - 1`)
+    — единственная индустрия-стандартная метрика «обыгрываем ли мы рынок».
+
+    Если для матча нет закрывающего кф — поле в `PredictionOutcome.closing_odds`
+    остаётся `None`, CLV не считается, но прогноз всё равно идёт в обычную
+    калибровку.
+    """
+
+    __tablename__ = "pinnacle_closing_odds"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    market_key: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    closing_odds: Mapped[float] = mapped_column(nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_id", "market_key", name="uq_pinnacle_closing_game_market",
+        ),
+        Index("ix_pinnacle_closing_game", "game_id"),
+    )
+
+
 class BacktestResult(Base):
     """Результаты бэктеста за конкретную дату.
 
@@ -389,9 +468,11 @@ __all__ = [
     "Base",
     "CalibrationSnapshot",
     "Feedback",
+    "LeagueAggregate",
     "LeagueStanding",
     "MatchResult",
     "PaymentLog",
+    "PinnacleClosingOdds",
     "PredictionCache",
     "PredictionLog",
     "PredictionOutcome",

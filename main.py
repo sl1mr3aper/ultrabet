@@ -93,6 +93,7 @@ async def main() -> None:
     from services.calibration_service import CalibrationService
     from services.history_backfill import HistoryBackfillService
     from services.kv_cache import KVCache
+    from services.league_aggregate_service import LeagueAggregateService
     from services.league_standings import LeagueStandingsService
     from services.predictions_resolver import PredictionsResolver
     from services.topmatches_precompute import TopMatchesPrecompute
@@ -115,6 +116,7 @@ async def main() -> None:
     _services.league_standings = LeagueStandingsService(
         sstats, database.session_factory,
     )
+    _services.league_aggregates = LeagueAggregateService(database.session_factory)
 
     def _build_prediction_service() -> Any:
         from core.value_calculator import ValueCalculator

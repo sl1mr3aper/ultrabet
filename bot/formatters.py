@@ -139,10 +139,18 @@ def _pick_top_one(
     Если у всех кандидатов нет кфа — деградирует в чистую сортировку
     по вероятности.
     """
+    from core.value_engine import MIN_FAIR_ODDS
+
+    max_p_for_top = 1.0 / MIN_FAIR_ODDS  # ≈ 0.769
+
     odds_map = getattr(result, "odds_map", None) or {}
     candidates: list[tuple[str, float, float | None]] = []
     for k, p in result.probabilities.items():
-        if not (0.0 < p <= 0.85):
+        # Глобальный фильтр кф ≥ 1.30: главный прогноз не должен иметь
+        # честный кф меньше 1.30 (фактически — это запрет «брать»
+        # P1 при 87% или ИТМ 2.5 при 85%, как видно в CSV-отчётах
+        # и в ответе пользователя про «че это за говно где от 1.3»).
+        if not (0.0 < p <= max_p_for_top):
             continue
         odd_raw = odds_map.get(k)
         odd = float(odd_raw) if isinstance(odd_raw, (int, float)) else None
@@ -786,9 +794,15 @@ def format_prediction(
 
     # ── Стандартный отчёт (прематч / сыгранный) ─────────────
     # Сортируем по ВАЛУЙНОСТИ (EV = p·odd − 1) в убывающем порядке.
-    # Потолок вероятности 85 % — отсекаем «перегретые» рынки.
+    # Потолок вероятности `MAX_PROB_FOR_TOP` (≈0.769 = 1/1.30) — отсекаем
+    # «перегретые» рынки, у которых честный кф < 1.30. Это глобальный
+    # фильтр кф ≥ 1.30, требуемый ТЗ: пользователь не должен видеть в
+    # ТОПе пиков с кф 1.18 (и ставку с EV ≈ нулевой ROI).
     # Если у рынка нет кфа — EV считаем равным 0 и рынок уходит в
     # низ сортировки (но всё ещё виден, если валуйных не хватает).
+    from core.value_engine import MIN_FAIR_ODDS
+    MAX_PROB_FOR_TOP = 1.0 / MIN_FAIR_ODDS  # ≈ 0.769
+
     odds_map_for_sort = getattr(result, "odds_map", None) or {}
 
     def _sort_item(kv: tuple[str, float]) -> tuple[float, float]:
@@ -800,7 +814,11 @@ def format_prediction(
         return (_ev_of(p, odd), p)
 
     sorted_probs = sorted(
-        (kv for kv in result.probabilities.items() if 0.0 < kv[1] <= 0.85),
+        (
+            kv
+            for kv in result.probabilities.items()
+            if 0.0 < kv[1] <= MAX_PROB_FOR_TOP
+        ),
         key=_sort_item,
         reverse=True,
     )
@@ -913,6 +931,22 @@ def format_prediction(
     parts.append(f"• {home} → *{result.home_xg:.2f}*")
     parts.append(f"• {away} → *{result.away_xg:.2f}*")
     parts.append(f"• Общий тотал → *{result.home_xg + result.away_xg:.2f}*")
+    # Средний тотал лиги (из MatchResult-агрегатов, fallback на SStats).
+    # Показываем всегда — это часть требования ТЗ. Если данных < 10
+    # матчей — берём дефолт 2.65 и помечаем «недостаточно данных».
+    _avg = getattr(result, "league_avg_total", None)
+    _n = (result.extra or {}).get("league_n_matches") if result.extra else None
+    if isinstance(_avg, (int, float)) and _avg > 0:
+        if isinstance(_n, int) and _n >= 10:
+            parts.append(
+                f"• 📊 Ср. тотал лиги → *{_avg:.2f}* "
+                f"_(по {_n} матчам)_"
+            )
+        else:
+            parts.append(
+                f"• 📊 Ср. тотал лиги → *{_avg:.2f}* "
+                "_(дефолт, мало данных)_"
+            )
 
     if result.accuracy_notes:
         parts.append("")

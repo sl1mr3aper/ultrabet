@@ -46,9 +46,14 @@ class RegulationResult:
     delta_pp: float  # сдвиг в процентных пунктах (+/-)
 
 
-def _beta_rate(hits: int, games: int) -> float:
-    """Сглаженная частота через прибавку Бета(1,1)."""
-    return (hits + 1) / (games + 2)
+def _beta_rate(hits: int, games: int, *, prior_a: float = 2.0, prior_b: float = 2.0) -> float:
+    """Сглаженная частота через Beta-prior (по умолчанию Beta(2,2)).
+
+    Beta(2,2) — слабый prior к 0.5, при малых выборках даёт меньше шума,
+    чем Beta(1,1). Для рынков с асимметричным prior'ом (например, ТБ 2.5
+    исторически 0.52) можно подавать prior_a/prior_b явно.
+    """
+    return (hits + prior_a) / (games + prior_a + prior_b)
 
 
 def _league_hitrate(
@@ -69,9 +74,12 @@ def _league_hitrate(
 
 
 # Минимальное количество семплов для статзначимой коррекции.
-# При меньшем количестве регулятор добавляет шум, а не сигнал.
-MIN_SAMPLES_HIST = 30
-MIN_SAMPLES_FEEDBACK = 20
+# Снижено с 30 → 15: для коротких лиг (Бангладеш, MLS Next Pro, NWSL) даже
+# 15 матчей дают статистически значимый сигнал, особенно с Beta(2,2) prior.
+# Beta-сглаживание тянет к 0.5 при малом N, поэтому ниже шанс «выстрелить
+# вбок» от нулевой выборки.
+MIN_SAMPLES_HIST = 15
+MIN_SAMPLES_FEEDBACK = 12
 
 
 def regulate(

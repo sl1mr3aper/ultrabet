@@ -179,9 +179,28 @@ class PredictionService:
             else str(_country_obj) if _country_obj else None
         )
 
-        # Средний тотал по лиге из season_table (standings)
-        _league_avg_total = 2.7  # дефолт
-        if season_table and isinstance(season_table, dict):
+        # Средний тотал по лиге из MatchResult (надёжный источник, считается фоном)
+        # Fallback на season_table SStats, если LeagueAggregateService не привязан.
+        from services.league_aggregate_service import DEFAULT_AVG_TOTAL
+
+        _league_avg_total = DEFAULT_AVG_TOTAL
+        _league_btts_rate: float | None = None
+        _league_n_matches = 0
+        try:
+            from bot.context import services as _ctx
+
+            _agg_svc = getattr(_ctx, "league_aggregates", None)
+            if _agg_svc is not None and _league_id is not None:
+                _stats = await _agg_svc.get(_league_id)
+                if not _stats.is_default:
+                    _league_avg_total = float(_stats.avg_total)
+                    _league_btts_rate = float(_stats.btts_rate)
+                    _league_n_matches = int(_stats.n_matches)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("LeagueAggregateService.get failed: {}", exc)
+
+        # Если из БД ещё не подгрузили — пробуем season_table от SStats.
+        if _league_n_matches == 0 and season_table and isinstance(season_table, dict):
             _st_rows = (
                 season_table.get("standings")
                 or season_table.get("rows")
@@ -510,9 +529,17 @@ class PredictionService:
             away_team_id=away_team_id if isinstance(away_team_id, int) else None,
             league_id=league_id_val,
             league_avg_total=_league_avg_total,
-            extra={"last_games": last_games}
-            if isinstance(last_games, dict)
-            else {},
+            extra={
+                **({"last_games": last_games} if isinstance(last_games, dict) else {}),
+                **(
+                    {
+                        "league_btts_rate": _league_btts_rate,
+                        "league_n_matches": _league_n_matches,
+                    }
+                    if _league_n_matches > 0
+                    else {}
+                ),
+            },
         )
 
 

@@ -122,14 +122,21 @@ def _resolve_totals(key: str, home: int, away: int) -> bool | None:
             return total > threshold
         return total < threshold
     # Длинный формат: over_2.5 / under_3.5
-    m = re.match(r"^(over|under)_([0-9]+(?:\.[0-9]+)?)$", key)
-    if not m:
-        return None
-    side, threshold_s = m.group(1), m.group(2)
-    threshold = float(threshold_s)
-    if side == "over":
-        return total > threshold
-    return total < threshold
+    m = re.match(r"^(over|under)_([0-9]+\.[0-9]+)$", key)
+    if m:
+        side, threshold_s = m.group(1), m.group(2)
+        threshold = float(threshold_s)
+        return (total > threshold) if side == "over" else (total < threshold)
+    # Legacy формат без точки: over_25 → 2.5, under_15 → 1.5, over_105 → 10.5
+    m = re.match(r"^(over|under)_(\d{2,3})$", key)
+    if m:
+        side, raw = m.group(1), m.group(2)
+        if len(raw) == 2:
+            threshold = int(raw[0]) + (0.5 if raw[1] == "5" else 0.0)
+        else:
+            threshold = int(raw[:-1]) + (0.5 if raw[-1] == "5" else 0.0)
+        return (total > threshold) if side == "over" else (total < threshold)
+    return None
 
 
 # ── Индивидуальные тоталы команд ─────────────────────────────
@@ -150,15 +157,23 @@ def _resolve_team_totals(key: str, home: int, away: int) -> bool | None:
         return target < threshold
     # Длинный формат: home_over_2.5 / away_under_1.5
     m = re.match(
-        r"^(home|away)_(over|under)_([0-9]+(?:\.[0-9]+)?)$", key
+        r"^(home|away)_(over|under)_([0-9]+\.[0-9]+)$", key
     )
-    if not m:
-        return None
-    side, direction, threshold = m.group(1), m.group(2), float(m.group(3))
-    target = home if side == "home" else away
-    if direction == "over":
-        return target > threshold
-    return target < threshold
+    if m:
+        side, direction, threshold = m.group(1), m.group(2), float(m.group(3))
+        target = home if side == "home" else away
+        return (target > threshold) if direction == "over" else (target < threshold)
+    # Legacy формат без точки: home_over_25 → 2.5, away_under_15 → 1.5
+    m = re.match(r"^(home|away)_(over|under)_(\d{2,3})$", key)
+    if m:
+        side, direction, raw = m.group(1), m.group(2), m.group(3)
+        if len(raw) == 2:
+            threshold = int(raw[0]) + (0.5 if raw[1] == "5" else 0.0)
+        else:
+            threshold = int(raw[:-1]) + (0.5 if raw[-1] == "5" else 0.0)
+        target = home if side == "home" else away
+        return (target > threshold) if direction == "over" else (target < threshold)
+    return None
 
 
 # ── Азиатские форы ────────────────────────────────────────────
