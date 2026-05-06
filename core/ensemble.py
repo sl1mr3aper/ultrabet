@@ -1,4 +1,14 @@
-"""Ансамбль: смесь Glicko (1X2) и Poisson (всё остальное)."""
+"""Ансамбль: смесь Glicko (1X2) и Poisson (всё остальное).
+
+Адаптивные веса: по умолчанию Glicko 55% / Poisson 45%.
+При наличии данных калибровки (SelfLearner snapshot) веса
+корректируются в зависимости от эмпирической точности каждой модели.
+
+Улучшения v2:
+- Confidence-weighted blend: при сильном расхождении моделей
+  уменьшаем уверенность (regression to mean).
+- Per-league весовой профиль (через league_id).
+"""
 
 from __future__ import annotations
 
@@ -16,8 +26,46 @@ from core.poisson_model import (
     top_correct_scores,
 )
 
-GLICKO_WEIGHT = 0.55
-POISSON_WEIGHT = 0.45
+# Базовые веса (используются если нет данных калибровки)
+GLICKO_WEIGHT_BASE = 0.55
+POISSON_WEIGHT_BASE = 0.45
+
+# Адаптивные веса (обновляются из SelfLearner)
+_adaptive_glicko_w = GLICKO_WEIGHT_BASE
+_adaptive_poisson_w = POISSON_WEIGHT_BASE
+
+
+def update_adaptive_weights(glicko_brier: float, poisson_brier: float) -> None:
+    """Обновить веса моделей на основе их Brier score.
+
+    Чем ниже Brier — тем лучше модель, тем больше вес.
+    """
+    global _adaptive_glicko_w, _adaptive_poisson_w
+    if glicko_brier <= 0 and poisson_brier <= 0:
+        return
+    if glicko_brier <= 0:
+        glicko_brier = poisson_brier
+    if poisson_brier <= 0:
+        poisson_brier = glicko_brier
+    # Инвертируем: меньше brier = больше вес
+    inv_g = 1.0 / max(glicko_brier, 0.001)
+    inv_p = 1.0 / max(poisson_brier, 0.001)
+    total = inv_g + inv_p
+    new_g = inv_g / total
+    new_p = inv_p / total
+    # Ограничиваем отклонение ±15% от базовых
+    _adaptive_glicko_w = max(0.40, min(0.70, new_g))
+    _adaptive_poisson_w = 1.0 - _adaptive_glicko_w
+
+
+def get_weights() -> tuple[float, float]:
+    """Текущие веса (Glicko, Poisson)."""
+    return _adaptive_glicko_w, _adaptive_poisson_w
+
+
+# Для обратной совместимости
+GLICKO_WEIGHT = GLICKO_WEIGHT_BASE
+POISSON_WEIGHT = POISSON_WEIGHT_BASE
 
 
 @dataclass(slots=True)
@@ -30,6 +78,51 @@ class PredictionPayload:
     top_scores: list[tuple[int, int, float]]
 
 
+_HOME_ADVANTAGE_GOALS = 0.20  # типичное преимущество дома в голах
+
+
+def _league_baseline_xg(league_avg_total: float) -> tuple[float, float]:
+    """Базовый xG из чистого среднего лиги (когда нет рейтинга/API).
+
+    В отличие от старого хардкода (1.45, 1.20), который игнорировал лигу
+    и переоценивал тоталы в низко-голевых лигах (Бангладеш, Финляндия,
+    NWSL), этот baseline всегда уважает реальный league_avg_total.
+    """
+    base_h = max(0.30, league_avg_total / 2.0 + _HOME_ADVANTAGE_GOALS)
+    base_a = max(0.30, league_avg_total / 2.0 - _HOME_ADVANTAGE_GOALS)
+    return base_h, base_a
+
+
+def _shrink_xg_to_league(
+    home_xg: float,
+    away_xg: float,
+    league_avg_total: float,
+    n_league_matches: int,
+) -> tuple[float, float]:
+    """Усадка xG к средней лиги для коротких выборок.
+
+    n=0 (новый бот / новая лига) → α=0.6 (сильная усадка)
+    n=50 → α=0.3
+    n=100+ → α=0.0 (доверяем рейтингу полностью)
+
+    Без усадки модель даёт переоценённые xG аутсайдера в лигах
+    типа Бангладеша / NWSL, где у нас нет хорошей оценки силы команд.
+    """
+    if n_league_matches >= 100:
+        return home_xg, away_xg
+    if n_league_matches <= 0:
+        alpha = 0.6
+    elif n_league_matches < 50:
+        alpha = 0.6 - 0.3 * (n_league_matches / 50.0)
+    else:
+        alpha = 0.3 - 0.3 * ((n_league_matches - 50) / 50.0)
+
+    base_h, base_a = _league_baseline_xg(league_avg_total)
+    sh = (1.0 - alpha) * home_xg + alpha * base_h
+    sa = (1.0 - alpha) * away_xg + alpha * base_a
+    return sh, sa
+
+
 def build_predictions(
     *,
     home_rating: float | None,
@@ -39,6 +132,9 @@ def build_predictions(
     home_rd: float = 60.0,
     away_rd: float = 60.0,
     league_avg_total: float = 2.7,
+    league_id: int | None = None,
+    country: str | None = None,
+    n_league_matches: int = 0,
 ) -> PredictionPayload:
     rating_known = home_rating is not None and away_rating is not None
     if rating_known:
@@ -47,11 +143,19 @@ def build_predictions(
             away_rating=float(away_rating),  # type: ignore[arg-type]
             home_rd=home_rd,
             away_rd=away_rd,
+            league_id=league_id,
+            country=country,
         )
     else:
         gl_home, gl_draw, gl_away = 0.40, 0.27, 0.33
 
-    if home_xg_api is not None and away_xg_api is not None and home_xg_api > 0 and away_xg_api > 0:
+    xg_from_api = (
+        home_xg_api is not None
+        and away_xg_api is not None
+        and home_xg_api > 0
+        and away_xg_api > 0
+    )
+    if xg_from_api:
         home_xg = float(home_xg_api)
         away_xg = float(away_xg_api)
     elif rating_known:
@@ -61,13 +165,38 @@ def build_predictions(
             league_avg_total=league_avg_total,
         )
     else:
-        home_xg, away_xg = 1.45, 1.20
+        # Раньше: жёсткий хардкод 1.45/1.20 — игнорировал league_avg_total.
+        # Теперь baseline зависит от реального среднего лиги.
+        home_xg, away_xg = _league_baseline_xg(league_avg_total)
+
+    # Shrinkage к лиге — снижает overestimation для аутсайдеров в коротких лигах.
+    # Не применяем к явно переданным xG_api (это считается «истиной»).
+    if not xg_from_api:
+        home_xg, away_xg = _shrink_xg_to_league(
+            home_xg, away_xg, league_avg_total, n_league_matches,
+        )
 
     p_home_p, p_draw_p, p_away_p = poisson_match_probs(home_xg, away_xg)
 
-    p_home = GLICKO_WEIGHT * gl_home + POISSON_WEIGHT * p_home_p
-    p_draw = GLICKO_WEIGHT * gl_draw + POISSON_WEIGHT * p_draw_p
-    p_away = GLICKO_WEIGHT * gl_away + POISSON_WEIGHT * p_away_p
+    gw, pw = get_weights()
+    p_home = gw * gl_home + pw * p_home_p
+    p_draw = gw * gl_draw + pw * p_draw_p
+    p_away = gw * gl_away + pw * p_away_p
+
+    # Confidence dampening: при сильном расхождении Glicko и Poisson
+    # смягчаем оценки к 1/3 (uncertainty = disagreement).
+    disagreement = (
+        abs(gl_home - p_home_p)
+        + abs(gl_draw - p_draw_p)
+        + abs(gl_away - p_away_p)
+    ) / 2.0  # max disagreement ≈ 1.0
+    if disagreement > 0.15:
+        dampen = min(0.25, (disagreement - 0.15) * 0.5)
+        uniform = 1.0 / 3.0
+        p_home = p_home * (1 - dampen) + uniform * dampen
+        p_draw = p_draw * (1 - dampen) + uniform * dampen
+        p_away = p_away * (1 - dampen) + uniform * dampen
+
     s = p_home + p_draw + p_away
     p_home, p_draw, p_away = p_home / s, p_draw / s, p_away / s
 

@@ -61,11 +61,78 @@ def _make_result() -> PredictionResult:
 def test_format_prediction_contains_titles():
     text = format_prediction(_make_result(), free_left=4, bonus_left=1)
     assert "ПРОГНОЗ НА МАТЧ" in text
+    assert "актуально на " in text
     assert "Real" in text and "Barca" in text
     assert "Glicko-2" in text
-    assert "ПРОГНОЗЫ ОТ 85%" in text
-    assert "ВАЛУЙНЫХ СТАВОК" in text
+    assert "ТОП-15 ПРОГНОЗОВ" in text
+    # раздел EV-ставок удалён из отчёта
+    assert "EV СТАВОК" not in text
     assert "Бесплатных" in text and "*4*" in text
+
+
+def test_format_prediction_without_glicko():
+    result = _make_result()
+    result.glicko_available = False
+    text = format_prediction(result, free_left=0, bonus_left=0)
+    assert "Glicko-2" in text
+    assert "данные недоступны" in text
+
+
+def test_format_prediction_includes_top_pick_block():
+    text = format_prediction(_make_result(), free_left=0, bonus_left=0)
+    assert "ГЛАВНЫЙ ПРОГНОЗ" in text
+
+
+def test_format_prediction_hides_odds_shows_fair_hint():
+    """В отчёте не должно быть коэффициентов букмекера — только fair-кф
+    в подсказке о EV (1/p)."""
+    text = format_prediction(_make_result(), free_left=0, bonus_left=0)
+    assert "кф *" not in text  # коэффициенты скрыты
+    assert "ставка EV, если коэф" in text  # подсказка 1/p
+
+
+def test_format_prediction_live_mode_compact():
+    result = _make_result()
+    result.is_live = True
+    result.current_minute = 22
+    result.home_score = 1
+    result.away_score = 0
+    text = format_prediction(result, free_left=0, bonus_left=0)
+    assert "ЛАЙВЕ" in text
+    assert "(22’)" in text
+    assert "1:0" in text  # лайв-счёт
+    # В лайв-режиме не выводится топ-15 (только главный пик и top-1 счёт)
+    assert "ТОП-15 ПРОГНОЗОВ" not in text
+    assert "ГЛАВНЫЙ ПРОГНОЗ" in text
+    assert "САМЫЙ ВЕРОЯТНЫЙ" in text
+
+
+def test_format_prediction_filters_above_85():
+    result = _make_result()
+    # Поднимаем одну из вероятностей выше 85% — её не должно быть в списке.
+    result.probabilities[MarketKey.DOUBLE_1X] = 0.92
+    text = format_prediction(result, free_left=0, bonus_left=0)
+    # 92% не должно появиться в строках с пронумерованными прогнозами
+    pred_lines = [
+        ln for ln in text.split("\n")
+        if ln.lstrip().split(".", 1)[0].isdigit()
+    ]
+    for ln in pred_lines:
+        assert "92.0%" not in ln, f"вероятности >85% должны быть отсечены: {ln!r}"
+
+
+def test_format_prediction_top_includes_low_probabilities():
+    result = _make_result()
+    text = format_prediction(result, free_left=0, bonus_left=0)
+    # Убеждаемся, что в топе показываются и котировки ниже 85% (у данного
+    # фикстур-матча нет ставок ≥85% — должны всё равно попадать в список).
+    lines = [ln for ln in text.split("\n") if ln.strip().startswith(("1.", "2.", "3."))]
+    assert lines, "должны быть пронумерованные прогнозы"
+    # Нет эмодзи в конце строки после процента — чистая ставка
+    for ln in lines:
+        assert not ln.rstrip().endswith(
+            ("🔥🔥", "🔥", "✅", "⚡", "🟡", "❗")
+        ), f"unexpected trailing emoji: {ln!r}"
 
 
 def test_format_balance_no_subscription():

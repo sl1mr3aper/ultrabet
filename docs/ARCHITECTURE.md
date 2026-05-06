@@ -22,7 +22,7 @@
 │  ├── prediction_service  │   ↳ оркестрирует прогноз матча
 │  ├── match_finder        │   ↳ поиск пары команд → game_id
 │  ├── h2h_service         │   ↳ очные встречи
-│  ├── daily_picks         │   ↳ скан дня → топ валуйных
+│  ├── daily_picks         │   ↳ скан дня → топ EV
 │  ├── top_matches         │   ↳ топ матчей по престижу
 │  ├── league_service      │   ↳ лиги, сезоны, standings
 │  ├── team_service        │   ↳ карточки команд
@@ -61,7 +61,7 @@
    - Загружает `/Games/{id}`, `/Games/glicko/{id}`, `/Odds/{id}` параллельно.
    - `core/ensemble.build_predictions()` собирает 30+ рынков.
    - `OddsParser` извлекает реальные коэффициенты букмекеров.
-   - `ValueCalculator` сравнивает вероятности с коэффициентами → топ-5 валуйных.
+   - `ValueCalculator` сравнивает вероятности с коэффициентами → топ-5 EV.
 4. Форматер `format_prediction()` рендерит итоговый текст.
 
 ## Подписки и лимиты

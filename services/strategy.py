@@ -4,7 +4,7 @@
 - conservative: ставки с ~hi вероятностью, низким value%
 - balanced: средний value% и средний коэф
 - aggressive: большой value% + большой коэф + низкая вероятность
-- combo: только underdogs с очень большой валуйностью
+- combo: только underdogs с очень большой EV
 """
 
 from __future__ import annotations
@@ -90,11 +90,11 @@ def describe_strategy(kind: StrategyKind) -> str:
             "минимум риска."
         ),
         StrategyKind.BALANCED: (
-            "⚖️ Сбалансированно — средние коэф и валуйность, универсальная "
+            "⚖️ Сбалансированно — средние коэф и EV, универсальная "
             "стратегия."
         ),
         StrategyKind.AGGRESSIVE: (
-            "🔥 Агрессивно — большие коэф, высокая валуйность, больший "
+            "🔥 Агрессивно — большие коэф, высокая EV, больший "
             "дисперсия."
         ),
         StrategyKind.UNDERDOG: (

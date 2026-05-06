@@ -21,7 +21,9 @@ def test_country_ru_unknown_returns_original():
 
 
 def test_country_flag_known():
-    assert country_flag("England") == "🏴"
+    assert country_flag("England") == "🏴󠁧󠁢󠁥󠁮󠁧󠁿"
+    assert country_flag("Scotland") == "🏴󠁧󠁢󠁳󠁣󠁴󠁿"
+    assert country_flag("Wales") == "🏴󠁧󠁢󠁷󠁬󠁳󠁿"
     assert country_flag("Russia") == "🇷🇺"
 
 

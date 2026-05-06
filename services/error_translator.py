@@ -1,6 +1,6 @@
 """Переводит ошибки API / сети в понятные пользователю сообщения.
 
-Когда SStats / aiohttp / telegram бросают исключения, handler ловит их через
+Когда внешний API / aiohttp / telegram бросают исключения, handler ловит их через
 ErrorMiddleware, но для дружелюбных сообщений мы хотим распознать конкретный
 вид ошибки (timeout, rate limit, 404, 500, network) и показать подходящий
 текст.
@@ -30,7 +30,7 @@ def translate(exc: BaseException) -> TranslatedError:
         return TranslatedError(
             kind="timeout",
             user_message=status_error(
-                "API SStats не ответил вовремя. Попробуй ещё раз через минуту."
+                "Источник данных не ответил вовремя. Попробуй ещё раз через минуту."
             ),
             technical=msg,
             retryable=True,
@@ -40,7 +40,7 @@ def translate(exc: BaseException) -> TranslatedError:
             kind="rate_limit",
             user_message=(
                 f"{ICON_WARN} Ты отправляешь запросы слишком часто. "
-                "Дай SStats отдохнуть секунд 10."
+                "Подожди секунд 10 и повтори."
             ),
             technical=msg,
             retryable=True,
@@ -58,7 +58,7 @@ def translate(exc: BaseException) -> TranslatedError:
         return TranslatedError(
             kind="server",
             user_message=status_error(
-                "API SStats сейчас недоступно. Уже сообщил админам, попробуй позже."
+                "Источник данных сейчас недоступен. Уже сообщил админам, попробуй позже."
             ),
             technical=msg,
             retryable=True,

@@ -6,7 +6,7 @@
 - fractional_kelly: 0.5 × Kelly — безопаснее.
 - martingale: удваиваем после каждого проигрыша (не рекомендуется, но бывает).
 - anti_martingale: удваиваем после каждого выигрыша (pyramiding).
-- percent: фиксированный процент банка, не зависит от валуйности.
+- percent: фиксированный процент банка, не зависит от EV.
 """
 
 from __future__ import annotations
@@ -73,11 +73,11 @@ def compute_stake(si: StakeInput, kind: StakeKind) -> float:
 
 def describe(kind: StakeKind) -> str:
     return {
-        StakeKind.FLAT: "Всегда одинаковая ставка (безопасно).",
-        StakeKind.KELLY: "Полный Kelly — математически оптимален, но большая волатильность.",
-        StakeKind.HALF_KELLY: "Половина Kelly — более щадящий вариант.",
-        StakeKind.QUARTER_KELLY: "Четверть Kelly — самый осторожный Kelly.",
-        StakeKind.PERCENT: "Фиксированный % от банка.",
+        StakeKind.FLAT: "Всегда одинаковая ставка от банка (безопасно).",
+        StakeKind.KELLY: "Оптимальная доля банка по формуле Келли.",
+        StakeKind.HALF_KELLY: "Половина Келли (легаси, не отображается).",
+        StakeKind.QUARTER_KELLY: "Четверть Келли (легаси, не отображается).",
+        StakeKind.PERCENT: "Фиксированный процент от банка.",
         StakeKind.MARTINGALE: "После проигрыша удваиваем — опасно.",
         StakeKind.ANTI_MARTINGALE: "После выигрыша удваиваем — пирамиды.",
     }[kind]

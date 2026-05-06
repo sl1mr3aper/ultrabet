@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import User
@@ -37,8 +38,18 @@ class UserRepository:
                 free_predictions_left=free_initial,
             )
             self._session.add(user)
-            await self._session.flush()
-            created = True
+            try:
+                await self._session.flush()
+                created = True
+            except IntegrityError:
+                # параллельный INSERT на этот же tg_id — забираем существующего
+                await self._session.rollback()
+                user = await self._session.scalar(
+                    select(User).where(User.tg_id == tg_id)
+                )
+                created = False
+                if user is None:
+                    raise
         else:
             updated = False
             if user.username != username:
@@ -116,11 +127,14 @@ class UserRepository:
     ) -> tuple[bool, str]:
         """Проверяем без списания, что пользователь может запросить прогноз.
 
-        Возврат: (allowed, source), где source ∈ {"sub", "free", ""}.
+        Возврат: (allowed, source), где source ∈ {"sub", "free", "admin", ""}.
         """
         now = datetime.now(tz=UTC)
         if user.is_blocked:
             return False, ""
+        # Админы — безлимит, не сбрасываем daily, не трогаем фри.
+        if user.is_admin:
+            return True, "admin"
         self._reset_daily_if_needed(user, now)
         sub_active = self._is_subscription_active(user, now)
         if sub_active:
@@ -148,6 +162,9 @@ class UserRepository:
         Приоритет: подписка → free (подписка сохраняет фри до экспирации).
         Возвращает источник списания или "" если ничего не списано.
         """
+        # Админы — безлимит, не списываем ничего.
+        if user.is_admin:
+            return "admin"
         now = datetime.now(tz=UTC)
         self._reset_daily_if_needed(user, now)
         sub_active = self._is_subscription_active(user, now)

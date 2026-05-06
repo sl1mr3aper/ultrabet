@@ -12,6 +12,7 @@ from bot.handlers import (
     extras,
     feedback,
     h2h,
+    history,
     leagues,
     main_menu,
     matches,
@@ -25,6 +26,7 @@ from bot.handlers import (
     strategy,
     subscription,
     teams,
+    top_day,
     topmatches,
 )
 
@@ -39,8 +41,10 @@ def get_root_router() -> Router:
     router.include_router(teams.router)
     router.include_router(players.router)
     router.include_router(h2h.router)
+    router.include_router(history.router)
     router.include_router(dailypicks.router)
     router.include_router(topmatches.router)
+    router.include_router(top_day.router)
     router.include_router(profile.router)
     router.include_router(calculator.router)
     router.include_router(bankroll.router)

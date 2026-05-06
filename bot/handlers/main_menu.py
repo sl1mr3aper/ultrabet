@@ -12,7 +12,7 @@ from bot.context import services
 from bot.keyboards import (
     back_to_menu,
     cancel_keyboard,
-    main_menu_keyboard,
+    home_keyboard,
     subscription_plans_keyboard,
 )
 from bot.states import MatchSearchStates
@@ -83,31 +83,21 @@ async def menu_match(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "menu:about")
 async def menu_about(callback: CallbackQuery) -> None:
-    settings: Settings = services.settings  # type: ignore[assignment]
+    _ = services.settings  # держим обращение, чтобы не отключили инициализацию
     text = (
         f"ℹ️ *О боте {APP_NAME}*\n\n"
-        "UltraBet — независимый Telegram-бот для футбольных прогнозов.\n"
-        "Никакой магии: только математика поверх открытой статистики.\n\n"
-        "📊 *Источник данных*\n"
-        "SStats.net (OpenAPI v0.9.14) — матчи, xG, рейтинги, травмы, стандинги,\n"
-        "коэффициенты букмекеров (pre-match и live).\n\n"
-        "🧠 *Модель прогнозов*\n"
-        "• *Glicko-2* — динамический рейтинг силы команд и неопределённости\n"
-        "• *Double Poisson* — распределение по точным счетам через xG\n"
-        "• *Ensemble* — смешивание силы, формы, H2H, травм\n"
-        "• *Season-table* и *last-games-stats* — поправки за контекст\n\n"
-        "💎 *Валуйные ставки*\n"
-        f"Value % = (p × коэф) − 1, фильтр ≥ *{settings.min_value_percent:.1f}%*.\n"
-        "Сортировка по убыванию валуйности. Показываем fair-коэф (1 / p)\n"
-        "и реальный коэф букмекера.\n\n"
-        "🎯 *Стратегии*\n"
-        "7 пресетов (от консервативного до Kelly / Martingale) — выбираются\n"
-        "в разделе настроек и применяются к расчёту стейка.\n\n"
-        "🌐 *Языки*: русский, английский, украинский, казахский.\n"
-        "📅 *Часовые пояса*: от UTC±0 до UTC+8.\n"
-        "🔁 *Кеш и ретраи*: смарт-TTL, circuit breaker, token-bucket лимиты.\n\n"
-        "🤝 *Команда*: UltraBet Labs, 2025.\n"
-        "📖 Документация: в /help."
+        "Независимый Telegram-бот для футбольных прогнозов.\n"
+        "Никакой магии — только математика поверх открытой статистики.\n\n"
+        "🧠 *Модель*\n"
+        "• Glicko-2 — динамический рейтинг силы команд\n"
+        "• Двойной Пуассон — распределение точных счётов через xG\n"
+        "• Ensemble — учёт формы, очных встреч и травм\n"
+        "• Коррекция исходя из последних матчей (база данных)\n\n"
+        "💎 *Что такое EV-ставка*\n"
+        "Это ставка, у которой реальная вероятность выше, чем "
+        "закладывает букмекер. Справедливый коэффициент считаем "
+        "как  `1 ÷ вероятность`.  Если коэффициент букмекера выше "
+        "этого значения — ставка EV."
     )
     if callback.message:
         await callback.message.edit_text(
@@ -120,19 +110,11 @@ async def menu_about(callback: CallbackQuery) -> None:
 async def menu_settings(callback: CallbackQuery, user: User) -> None:
     settings: Settings = services.settings  # type: ignore[assignment]
     strategy_code = getattr(user, "strategy", None) or "balanced"
-    notif_on = bool(getattr(user, "notifications_enabled", True))
     text = (
         "⚙️ *Настройки*\n\n"
         f"🌐 Язык: *{_lang_label(user.language_code)}*\n"
         f"🕒 Часовой пояс: *{_tz_label(settings.timezone_offset)}*\n"
-        f"🎯 Стратегия ставок: *{_strategy_label(strategy_code)}*\n"
-        f"🔔 Уведомления: *{'включены' if notif_on else 'выключены'}*\n\n"
-        "Доступные команды:\n"
-        "`/strategy` — выбрать пресет стратегии\n"
-        "`/bankroll` — калькулятор стейка (Kelly / Flat / Martingale)\n"
-        "`/notify on|off` — уведомления о матчах и новых value-ставках\n"
-        "`/tz <N>` — смена часового пояса (UTC+N)\n"
-        "`/lang ru|en|uk|kz` — язык интерфейса"
+        f"🎯 Стратегия ставок: *{_strategy_label(strategy_code)}*"
     )
     if callback.message:
         await callback.message.edit_text(
@@ -162,9 +144,12 @@ async def menu_subscribe(callback: CallbackQuery, user: User) -> None:
             f"📊 Использовано сегодня: *{used}/{quota}*"
         )
     else:
+        # Бонусной квоты теперь нет — все «начисления» идут как бесплатные.
+        # Если в БД ещё остались старые `bonus_predictions` — добавляем их к
+        # бесплатным, чтобы не потерять.
         status_line = (
             "🆓 *Тариф:* бесплатный\n"
-            f"Осталось прогнозов: *{free}* (бонусных: *{bonus}*)"
+            f"Осталось бесплатных отчётов: *{free + bonus}*"
         )
 
     lines = [
@@ -178,9 +163,7 @@ async def menu_subscribe(callback: CallbackQuery, user: User) -> None:
     ]
     for plan_obj in SUBSCRIPTION_PLANS.values():
         price = getattr(plan_obj, "stars_price", None) or getattr(plan_obj, "price", 0)
-        lines.append(
-            f"• *{plan_obj.title}* — {plan_obj.daily_quota} прогнозов/день · {price} ⭐"
-        )
+        lines.append(f"• *{plan_obj.title}* — {price} ⭐")
     lines.append("")
     lines.append("Выбери тариф ниже 👇")
     text = "\n".join([ln for ln in lines if ln is not None])
@@ -212,10 +195,16 @@ async def menu_balance_redirect(
 
 @router.callback_query(F.data == "menu:home")
 async def menu_home(callback: CallbackQuery, state: FSMContext) -> None:
+    from bot.navigation import nav_clear
+    await nav_clear(state)
     await state.clear()
     if callback.message:
         await callback.message.edit_text(
-            MAIN_MENU, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
+            MAIN_MENU,
+            reply_markup=home_keyboard(
+                callback.from_user.id if callback.from_user else None
+            ),
+            parse_mode="Markdown",
         )
     await callback.answer()
 
@@ -225,17 +214,6 @@ async def menu_help_btn(callback: CallbackQuery) -> None:
     if callback.message:
         await callback.message.edit_text(
             HELP_TEXT, reply_markup=back_to_menu(), parse_mode="Markdown"
-        )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "menu_main")
-async def menu_main_alias(callback: CallbackQuery, state: FSMContext) -> None:
-    """Алиас для пагинации: возвращает в главное меню."""
-    await state.clear()
-    if callback.message:
-        await callback.message.edit_text(
-            MAIN_MENU, reply_markup=main_menu_keyboard(), parse_mode="Markdown"
         )
     await callback.answer()
 

@@ -1,4 +1,4 @@
-"""Daily picks — пробег по матчам дня и сбор лучших валуйных предсказаний."""
+"""Daily picks — пробег по матчам дня и сбор лучших EV предсказаний."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class DailyPick:
 
 
 class DailyPicksGenerator:
-    """Сканирует матчи на конкретную дату и собирает топ валуйных ставок."""
+    """Сканирует матчи на конкретную дату и собирает топ EV-ставок."""
 
     def __init__(
         self,
@@ -27,7 +27,7 @@ class DailyPicksGenerator:
         *,
         value_calculator: ValueCalculator | None = None,
         odds_parser: OddsParser | None = None,
-        max_concurrent: int = 5,
+        max_concurrent: int = 10,
     ) -> None:
         self._sstats = sstats
         self._value = value_calculator or ValueCalculator()

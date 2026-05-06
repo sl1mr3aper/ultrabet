@@ -1,4 +1,4 @@
-"""Мониторинг live-матчей: собирает изменения коэффициентов и ищет валуйные.
+"""Мониторинг live-матчей: собирает изменения коэффициентов и ищет EV.
 
 Используется как periodic-задача Scheduler для отправки уведомлений
 пользователям, подписанным на live-алерты.
@@ -29,7 +29,7 @@ class LiveMatchSnapshot:
 
 
 class LiveMonitor:
-    """Периодически опрашивает live-матчи и ищет изменения/валуйность."""
+    """Периодически опрашивает live-матчи и ищет изменения/EV."""
 
     def __init__(
         self,
@@ -83,7 +83,7 @@ class LiveMonitor:
         snap: LiveMatchSnapshot,
         probabilities: dict[str, float],
     ) -> list[ValueBet]:
-        """Ищем валуйные ставки в текущем снапшоте."""
+        """Ищем EV-ставки в текущем снапшоте."""
         bets: list[ValueBet] = []
         for market_key, odds in snap.odds_map.items():
             prob = probabilities.get(market_key)

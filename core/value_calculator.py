@@ -1,4 +1,9 @@
-"""Поиск valuable bets по соотношению вероятность × коэф."""
+"""Поиск EV-ставок по соотношению вероятность × коэфф.
+
+Честный коэффициент = 1 / вероятность.
+EV = (вероятность × коэфф - 1) × 100%.
+Критерий Келли = (b*p - q) / b, где b = коэфф - 1, p = вер-ть, q = 1-p.
+"""
 
 from __future__ import annotations
 
@@ -10,20 +15,33 @@ class ValueBet:
     market_key: str
     probability: float
     actual_odds: float
-    fair_odds: float
-    value_percent: float
+    fair_odds: float       # честный коэфф = 1 / probability
+    value_percent: float   # EV в %
     is_value: bool
+    kelly_fraction: float = 0.0      # доля Келли (0..1)
+    half_kelly_fraction: float = 0.0  # пол-Келли
+
+
+def _kelly_fraction(prob: float, odds: float) -> float:
+    """Доля Келли: f* = (b*p - q) / b."""
+    if odds <= 1.0 or prob <= 0.0 or prob >= 1.0:
+        return 0.0
+    b = odds - 1.0
+    p = prob
+    q = 1.0 - p
+    f = (b * p - q) / b
+    return max(f, 0.0)
 
 
 class ValueCalculator:
-    """value = prob * actual_odds - 1; fair_odds = 1 / prob."""
+    """Расчёт EV: честный_кф = 1/p, EV = p*кф - 1."""
 
     def __init__(
         self,
         *,
-        min_odds: float = 1.15,
+        min_odds: float = 1.51,
         min_value_percent: float = 2.0,
-        min_probability: float = 0.90,
+        min_probability: float = 0.35,
     ) -> None:
         self.min_odds = max(1.01, min_odds)
         self.min_value_percent = max(0.0, min_value_percent)
@@ -33,11 +51,15 @@ class ValueCalculator:
         prob = max(0.0, min(1.0, probability))
         odds = max(0.0, actual_odds)
         if prob <= 0 or odds <= 0:
-            return ValueBet(market_key, prob, odds, 0.0, -100.0, False)
+            return ValueBet(market_key, prob, odds, 0.0, -100.0, False, 0.0, 0.0)
+        # Честный коэффициент
         fair = 1.0 / prob
+        # EV
         value_percent = (prob * odds - 1.0) * 100.0
-        # Sanity-check: при p ≥ 0.90 кф не может быть > 2 — такой кф значит
-        # мы сопоставили не тот рынок; помечаем как not value и не показываем
+        # Келли
+        kelly = _kelly_fraction(prob, odds)
+        half_kelly = kelly * 0.5
+        # Проверки
         suspicious = prob >= 0.90 and odds > 2.0
         is_value = (
             not suspicious
@@ -45,7 +67,10 @@ class ValueCalculator:
             and value_percent >= self.min_value_percent
             and prob >= self.min_probability
         )
-        return ValueBet(market_key, prob, odds, fair, value_percent, is_value)
+        return ValueBet(
+            market_key, prob, odds, fair, value_percent, is_value,
+            kelly_fraction=kelly, half_kelly_fraction=half_kelly,
+        )
 
     def find_top_value(
         self,

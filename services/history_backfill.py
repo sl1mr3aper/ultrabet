@@ -121,7 +121,11 @@ class HistoryBackfillService:
 
 
 def _extract_score(g: dict[str, Any], side: str) -> int | None:
+    # SStats: homeResult / awayResult — итоговый счёт; FTResult / HTResult —
+    # 90 мин / 1-й тайм. Основной ключ — `*FTResult`, fallback на `*Result`.
     for key in (
+        f"{side}FTResult",
+        f"{side}Result",
         f"{side}Score",
         f"{side}Goals",
         f"{side}FT",

@@ -190,7 +190,7 @@ kb = pagination_keyboard(page, callback_prefix="matches_page_today")
 `ErrorMiddleware` вызывает `translate()` для всех исключений handler-ов
 и отвечает user_message пользователю.
 
-## 7. Валуйная сортировка
+## 7. EV сортировка
 
 В каждом сообщении с прогнозом:
 ```

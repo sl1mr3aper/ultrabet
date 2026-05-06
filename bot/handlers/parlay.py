@@ -42,20 +42,20 @@ async def parlay_cmd(message: Message) -> None:
         legs.append(ParlayLeg(name=token, probability=prob, odds=odds))
     result = calculate_parlay(legs)
     if result is None:
-        await message.answer("Некорректные данные. Проверь коэф > 1 и 0 < prob ≤ 1.")
+        await message.answer("Некорректные данные. Проверь коэф > 1 и 0 < вер. ≤ 1.")
         return
     lines = [
         header(f"Экспресс из {result.leg_count} событий", icon=ICON_TARGET),
         f"Итоговый коэф: *{result.total_odds:.2f}*",
         f"Итоговая вероятность: *{result.combined_probability * 100:.2f}%*",
-        f"Fair-коэф: *{result.fair_total_odds:.2f}*",
+        f"КФ (1/p): *{result.fair_total_odds:.2f}*",
         f"EV: *{result.value_percent:+.2f}%*",
         f"Риск: *{describe_risk(result)}*",
         "",
     ]
     for leg in legs:
         lines.append(
-            f"• `{leg.name}` → prob={leg.probability*100:.1f}%, odds={leg.odds:.2f}"
+            f"• `{leg.name}` → вер.={leg.probability*100:.1f}%, кф={leg.odds:.2f}"
         )
     await message.answer(
         "\n".join(lines),

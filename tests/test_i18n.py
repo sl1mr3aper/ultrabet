@@ -46,7 +46,7 @@ def test_missing_for_default_empty():
 
 
 def test_value_bet_russian():
-    assert "алуй" in t("value.bet", "ru") or "Валуй" in t("value.bet", "ru")
+    assert "алуй" in t("value.bet", "ru") or "EV" in t("value.bet", "ru")
 
 
 def test_strategy_keys_in_all_langs():

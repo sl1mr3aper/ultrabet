@@ -22,9 +22,10 @@ class APINotFoundError(SStatsAPIError):
 class APIRateLimitError(SStatsAPIError):
     """Превышен лимит запросов (429)."""
 
-    def __init__(self, message: str, retry_after: float = 5.0) -> None:
+    def __init__(self, message: str, retry_after: float = 10.0) -> None:
         super().__init__(message)
-        self.retry_after = retry_after
+        # Пол в 10с: даём API полноценно отдохнуть, прежде чем ретраить.
+        self.retry_after = max(retry_after, 10.0)
 
 
 class APIInvalidDataError(SStatsAPIError):

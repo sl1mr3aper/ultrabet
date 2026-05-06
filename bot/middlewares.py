@@ -45,9 +45,12 @@ class DbSessionMiddleware(BaseMiddleware):
 class UserMiddleware(BaseMiddleware):
     """Создаёт/получает User из Telegram-апдейта и кладёт в data['user']."""
 
-    def __init__(self, *, free_initial: int) -> None:
+    def __init__(
+        self, *, free_initial: int, admin_ids: list[int] | None = None
+    ) -> None:
         super().__init__()
         self._free_initial = free_initial
+        self._admin_ids = set(admin_ids or [])
 
     async def __call__(
         self,
@@ -70,6 +73,22 @@ class UserMiddleware(BaseMiddleware):
             language_code=tg_user.language_code,
             free_initial=self._free_initial,
         )
+        # Авто-присвоение admin-флага для tg_id из ADMIN_IDS — гарантирует
+        # безлимитные запросы и доступ к /admin даже если БД не знает.
+        if (
+            tg_user.id in self._admin_ids
+            and not user.is_admin
+        ):
+            user.is_admin = True
+            await session.flush()
+        # Коммитим создание пользователя СРАЗУ, чтобы SQLite не держал
+        # write-lock во время длинных хэндлеров (расчёт прогноза уходит
+        # на десятки секунд в SStats). Без этого параллельные корутины
+        # ждут lock до минуты и валятся с «database is locked».
+        try:
+            await session.commit()
+        except Exception as _cmt_exc:
+            logger.debug("user-middleware commit skipped: {}", _cmt_exc)
         data["user"] = user
         return await handler(event, data)
 

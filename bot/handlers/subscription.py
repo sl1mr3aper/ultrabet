@@ -21,7 +21,6 @@ from bot.keyboards import main_menu_keyboard, subscription_plans_keyboard
 from bot.texts import (
     SUBSCRIBE_ACTIVATED,
     SUBSCRIBE_HEADER,
-    SUBSCRIBE_PLAN_LINE,
 )
 from config import Settings
 from db.models import User
@@ -46,10 +45,7 @@ async def subscribe_command(message: Message) -> None:
 def _subscribe_text() -> str:
     parts = [SUBSCRIBE_HEADER, ""]
     for plan in SUBSCRIPTION_PLANS.values():
-        parts.append(
-            SUBSCRIBE_PLAN_LINE.format(title=plan.title, quota=plan.daily_quota)
-            + f" · {plan.stars_price} ⭐"
-        )
+        parts.append(f"• *{plan.title}* — {plan.stars_price} ⭐")
     parts.append("")
     parts.append("Выбери тариф — бот выставит счёт в Telegram Stars ⭐.")
     return "\n".join(parts)
@@ -73,7 +69,7 @@ async def buy_plan_cb(callback: CallbackQuery) -> None:
         return
 
     title = f"UltraBet · {plan.title} {plan.badge}"
-    description = plan.description or f"Подписка на {plan.title}"
+    description = f"До 40 отчётов в день на период: {plan.title}."
     # currency=XTR => Telegram Stars
     prices = [LabeledPrice(label=plan.title, amount=plan.stars_price)]
     try:
@@ -152,9 +148,6 @@ async def on_successful_payment(
         ref = ReferralService(
             session,
             bonus_signup=settings.referral_bonus_signup,
-            bonus_sub_1m=settings.referral_bonus_sub_1m,
-            bonus_sub_3m=settings.referral_bonus_sub_3m,
-            bonus_sub_12m=settings.referral_bonus_sub_12m,
         )
         try:
             reward = await ref.reward_for_subscription(referred=user, plan_code=plan.code)
@@ -164,7 +157,7 @@ async def on_successful_payment(
                         reward["referrer_id"],
                         f"💰 {user.display_name()} оформил подписку "
                         f"*{reward.get('plan_title', plan.code)}*.\n"
-                        f"Ты получил *+{reward['bonus']}* бонусных прогнозов.",
+                        f"Ты получил *+{reward['bonus']}* бесплатных отчётов.",
                         parse_mode="Markdown",
                     )
                 except Exception as exc2:

@@ -156,6 +156,59 @@ def adjust_for_standings(
     return adj
 
 
+# ── Профитность / маржинальные паттерны ────────────────────────────────
+def adjust_for_profits(
+    profits: dict[str, Any] | None,
+) -> AccuracyAdjustments:
+    """Анализ исторических профитных паттернов команды.
+
+    Если команда исторически прибыльна на ТБ/ТМ, подкорректируем xG.
+    """
+    adj = AccuracyAdjustments()
+    if not profits or not isinstance(profits, dict):
+        return adj
+    # Извлекаем ROI по тоталам
+    over_roi = _safe_float(profits.get("overRoi") or profits.get("over_roi"))
+    under_roi = _safe_float(profits.get("underRoi") or profits.get("under_roi"))
+    if over_roi is not None and over_roi > 10.0:
+        boost = min(1.0 + over_roi / 500.0, 1.08)
+        adj.home_xg_factor *= boost
+        adj.away_xg_factor *= boost
+        adj.notes.append(f"📈 Профит тоталов ТБ: ROI {over_roi:.0f}% (+xG ×{boost:.2f})")
+    elif under_roi is not None and under_roi > 10.0:
+        shrink = max(1.0 - under_roi / 500.0, 0.92)
+        adj.home_xg_factor *= shrink
+        adj.away_xg_factor *= shrink
+        adj.notes.append(f"📉 Профит тоталов ТМ: ROI {under_roi:.0f}% (−xG ×{shrink:.2f})")
+    return adj
+
+
+# ── Домашнее преимущество (доп. фактор) ───────────────────────────────
+def adjust_for_home_advantage(
+    last_games: dict[str, Any] | None,
+) -> AccuracyAdjustments:
+    """Дополнительный буст за домашнюю серию побед."""
+    adj = AccuracyAdjustments()
+    if not last_games or not isinstance(last_games, dict):
+        return adj
+    home_recent = last_games.get("home") or last_games.get("homeTeam") or {}
+    if not isinstance(home_recent, dict):
+        return adj
+    # Серия побед дома
+    wins = _safe_float(home_recent.get("homeWins") or home_recent.get("wins"))
+    total = _safe_float(home_recent.get("homeGames") or home_recent.get("total"))
+    if wins is not None and total is not None and total >= 3:
+        win_rate = wins / max(total, 1)
+        if win_rate >= 0.7:
+            delta = min((win_rate - 0.5) * 40.0, 20.0)
+            adj.home_rating_delta += delta
+            adj.notes.append(
+                f"🏟 Домашнее преимущество: {wins:.0f}/{total:.0f} побед "
+                f"({delta:+.0f} GL)"
+            )
+    return adj
+
+
 def merge_adjustments(
     *adjustments: AccuracyAdjustments,
 ) -> AccuracyAdjustments:
@@ -182,8 +235,10 @@ def _safe_float(value: Any) -> float | None:
 
 __all__ = [
     "AccuracyAdjustments",
+    "adjust_for_home_advantage",
     "adjust_for_injuries",
     "adjust_for_last_games",
+    "adjust_for_profits",
     "adjust_for_standings",
     "merge_adjustments",
 ]
