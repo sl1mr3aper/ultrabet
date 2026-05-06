@@ -1,0 +1,143 @@
+# UltraBet — production-ready compose с Postgres + Redis + бэкапами.
+#
+# Запуск:
+#   cp .env.example .env  # заполнить BOT_TOKEN, ADMIN_IDS, etc.
+#   docker compose up -d --build
+#
+# Профили:
+#   default (бот + postgres + redis)
+#   --profile backup  — добавляет cron-сервис dump'ов в /var/backups/ultrabet
+#   --profile metrics — поднимает Prometheus + Grafana (опционально)
+#
+# Замечания:
+# - DATABASE_URL по умолчанию указывает на Postgres; чтобы вернуться на
+#   SQLite, переопредели DATABASE_URL=sqlite+aiosqlite:///data/bot.db в .env.
+# - Volume `pgdata` хранит данные БД между рестартами.
+# - Сервис `bot` ждёт healthcheck'а Postgres перед стартом.
+
+x-bot-env: &bot-env
+  BOT_TOKEN: ${BOT_TOKEN:?BOT_TOKEN is required}
+  BOT_USERNAME: ${BOT_USERNAME:-ultrabet_predictions_bot}
+  ADMIN_IDS: ${ADMIN_IDS:-}
+  SSTATS_API_KEY: ${SSTATS_API_KEY:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  PROXY_URL: ${PROXY_URL:-}
+  DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://ultrabet:ultrabet@postgres:5432/ultrabet}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  PROMETHEUS_PORT: ${PROMETHEUS_PORT:-9108}
+  TIMEZONE_OFFSET: ${TIMEZONE_OFFSET:-3}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ultrabet
+      POSTGRES_USER: ultrabet
+      POSTGRES_PASSWORD: ultrabet
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ultrabet -d ultrabet"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    networks: [internal]
+
+  bot:
+    build: .
+    image: ultrabet:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *bot-env
+    volumes:
+      - botdata:/app/data
+      - botlogs:/app/logs
+    networks: [internal]
+    ports:
+      # Prometheus scrape endpoint (если включён)
+      - "${PROMETHEUS_PORT:-9108}:${PROMETHEUS_PORT:-9108}"
+
+  backup:
+    profiles: ["backup"]
+    image: ultrabet:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *bot-env
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-6}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-ultrabet}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-eu-central-1}
+    volumes:
+      - botbackups:/var/backups/ultrabet
+    networks: [internal]
+    command: ["python", "-m", "scripts.backup_loop"]
+
+  worker:
+    # Celery worker — обрабатывает задачи self-learning, secondary
+    # calibrator, CLV-capture, бэкапы. Включается профилем "worker".
+    profiles: ["worker"]
+    image: ultrabet:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *bot-env
+    networks: [internal]
+    command:
+      ["celery", "-A", "services.celery_app", "worker", "-l", "info", "-c", "4"]
+
+  beat:
+    # Celery beat — единый источник cron-расписания.
+    profiles: ["worker"]
+    image: ultrabet:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *bot-env
+    networks: [internal]
+    command: ["celery", "-A", "services.celery_app", "beat", "-l", "info"]
+
+volumes:
+  pgdata:
+  redisdata:
+  botdata:
+  botlogs:
+  botbackups:
+
+networks:
+  internal:
+    driver: bridge

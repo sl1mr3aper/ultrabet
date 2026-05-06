@@ -206,7 +206,7 @@ async def admin_analytics(
         f"• Проиграно: *{s.lost}*",
         f"• Hit-rate: *{s.hit_rate_pct:.2f}%*",
         f"• ROI: *{s.roi_pct:+.2f}%*",
-        f"• Средняя валуйность: *{s.avg_value_pct:.2f}%*",
+        f"• Средняя EV: *{s.avg_value_pct:.2f}%*",
         f"• Средний коэф: *{s.avg_odds:.2f}*",
         f"• Лучший стрик: *{s.best_streak}*",
         f"• Худший стрик: *{s.worst_streak}*",
@@ -568,7 +568,7 @@ async def _run_backtest(
         return sid in FINISHED_STATUSES or sn in FINISHED_NAMES
 
     value_calc = ValueCalculator(
-        min_odds=getattr(settings, "min_value_odds", 1.3),
+        min_odds=getattr(settings, "min_value_odds", 1.51),
         min_probability=getattr(settings, "min_value_probability", 0.1),
     )
     try:
@@ -582,8 +582,9 @@ async def _run_backtest(
         self_learner=learner,
     )
 
-    # Прогнозируем все матчи — по 3 параллельно
-    sem = asyncio.Semaphore(3)
+    # Прогнозируем все матчи — по 6 параллельно (после оптимизации
+    # connection pool это безопасно с точки зрения SStats rate-limit).
+    sem = asyncio.Semaphore(6)
 
     async def _predict_one(gid: int):
         async with sem:
@@ -733,9 +734,9 @@ async def _run_backtest(
     take_bets = [b for b in (bets_finished + bets_upcoming) if b["verdict"] == "брать"]
     caution_bets = [b for b in (bets_finished + bets_upcoming) if b["verdict"] == "осторожно"]
 
-    # Топ-10 валуйных пиков «брать» (или «осторожно» если «брать» нет),
+    # Топ-10 EV-пиков «брать» (или «осторожно» если «брать» нет),
     # сортируем по composite (EV × √p), а НЕ по кфу, чтобы выводить
-    # «вероятный + валуйный», как в ТЗ.
+    # «вероятный + EV», как в ТЗ.
     sortable = take_bets if take_bets else caution_bets
     top10 = sorted(sortable, key=lambda b: b.get("composite", 0.0), reverse=True)[:10]
 
@@ -782,7 +783,7 @@ async def _run_backtest(
                 f"{i}. {icon} {_md(b['home'])} — {_md(b['away'])} "
                 f"({b['score']})\n"
                 f"     {_md(b['label'])} · кф *{fair_o:.2f}*\n"
-                f"     модель *{b['prob']:.0%}* · валуй *{b['ev_pct']:+.1f}%*"
+                f"     модель *{b['prob']:.0%}* · EV *{b['ev_pct']:+.1f}%*"
             )
 
     text = "\n".join(lines)
@@ -837,7 +838,7 @@ async def _run_backtest(
                 f"   Прогноз: {b['label']}  [вердикт: {b['verdict']}]"
             )
             report_lines.append(
-                f"   {_fmt_odds(b)} | модель {b['prob']:.1%} | валуй {b['ev_pct']:+.1f}%"
+                f"   {_fmt_odds(b)} | модель {b['prob']:.1%} | EV {b['ev_pct']:+.1f}%"
             )
             report_lines.append("")
 
@@ -856,7 +857,7 @@ async def _run_backtest(
                 f"   Прогноз: {b['label']}  [вердикт: {b['verdict']}]"
             )
             report_lines.append(
-                f"   {_fmt_odds(b)} | модель {b['prob']:.1%} | валуй {b['ev_pct']:+.1f}%"
+                f"   {_fmt_odds(b)} | модель {b['prob']:.1%} | EV {b['ev_pct']:+.1f}%"
             )
             report_lines.append("")
 
@@ -939,7 +940,7 @@ async def _run_prediction_analysis(
     """Прогнозы по N матчам выбранной даты, отбор только «брать».
 
     Фоном держим asyncio.Task, чтобы кнопкой «🛑 Остановить» можно
-    было прервать процесс. По окончании показываем валуйный топ
+    было прервать процесс. По окончании показываем EV топ
     (composite EV × √p) и оценку точности модели по BacktestResult.
     Если дата в прошлом — работаем бэктестом (выводим и фактический
     результат по итогу).
@@ -1011,7 +1012,7 @@ async def _run_prediction_analysis(
             return
 
         value_calc = ValueCalculator(
-            min_odds=getattr(settings, "min_value_odds", 1.15),
+            min_odds=getattr(settings, "min_value_odds", 1.51),
             min_value_percent=getattr(settings, "min_value_percent", 2.0),
             min_probability=getattr(settings, "min_value_probability", 0.35),
         )
@@ -1457,3 +1458,93 @@ def _md(text: str) -> str:
 
 def _now() -> datetime:
     return datetime.now(tz=UTC)
+
+
+# ── 📈 Точность модели — отчёт по prediction_outcomes ────────────────────────
+
+
+@router.callback_query(F.data == "admin:model_accuracy")
+async def admin_model_accuracy_overall(
+    callback: CallbackQuery, user: User, settings: Settings,
+) -> None:
+    """Сводка по всем сохранённым в БД пикам: Brier / ROI / CLV / hit rate."""
+    if not _is_admin(user, settings):
+        await callback.answer(ADMIN_NOT_ALLOWED, show_alert=True)
+        return
+
+    if services.session_factory is None:
+        await callback.answer("session_factory не инициализирован", show_alert=True)
+        return
+
+    from services.backtest_service import BacktestService
+
+    svc = BacktestService(session_factory=services.session_factory)
+    overall_all = await svc.run(only_ev_plus=False)
+    overall_ev = await svc.run(only_ev_plus=True)
+    by_market = await svc.by_market()
+
+    if overall_all.is_empty:
+        text = (
+            "📈 *Точность модели*\n\n"
+            "В БД пока нет ни одного сохранённого прогноза в "
+            "`prediction_outcomes`. Сделай несколько прогнозов, "
+            "матчи завершатся — здесь появится статистика."
+        )
+    else:
+        def _fmt(v: float | None, kind: str) -> str:
+            if v is None:
+                return "—"
+            if kind == "pct":
+                return f"{v * 100:.1f}%"
+            if kind == "roi":
+                return f"{v:+.2f}%"
+            if kind == "clv":
+                return f"{v * 100:+.2f}%"
+            if kind == "brier":
+                return f"{v:.4f}"
+            return str(v)
+
+        lines = [
+            "📈 *Точность модели*",
+            "",
+            f"Всего пиков в БД: *{overall_all.n_picks}*",
+            f"С исходом (settled): *{overall_all.n_settled}*",
+            f"С actual\\_odds: *{overall_all.n_with_odds}* · "
+            f"С closing\\_odds: *{overall_all.n_with_close}*",
+            "",
+            "*Все пики:*",
+            f"  hit\\_rate = `{_fmt(overall_all.hit_rate, 'pct')}`",
+            f"  Brier = `{_fmt(overall_all.brier_score, 'brier')}`"
+            "  (baseline 0.25)",
+            f"  ROI = `{_fmt(overall_all.roi_pct, 'roi')}`",
+            f"  CLV avg = `{_fmt(overall_all.avg_clv, 'clv')}`",
+            f"  CLV>0 rate = `{_fmt(overall_all.positive_clv_rate, 'pct')}`",
+            "",
+            "*Только EV+ (prob × odds > 1):*",
+            f"  пиков = `{overall_ev.n_settled}`",
+            f"  hit\\_rate = `{_fmt(overall_ev.hit_rate, 'pct')}`",
+            f"  Brier = `{_fmt(overall_ev.brier_score, 'brier')}`",
+            f"  ROI = `{_fmt(overall_ev.roi_pct, 'roi')}`",
+        ]
+
+        if by_market:
+            lines.append("")
+            lines.append("*По типу рынка:*")
+            for cat in sorted(by_market):
+                m = by_market[cat]
+                if m.is_empty:
+                    continue
+                lines.append(
+                    f"  `{cat:<10s}` n={m.n_picks:3d}  "
+                    f"hit={_fmt(m.hit_rate, 'pct')}  "
+                    f"Brier={_fmt(m.brier_score, 'brier')}  "
+                    f"ROI={_fmt(m.roi_pct, 'roi')}"
+                )
+        text = "\n".join(lines)
+
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        text,
+        parse_mode="Markdown",
+        reply_markup=home_keyboard(callback.from_user.id if callback.from_user else None),
+    )
+    await callback.answer()

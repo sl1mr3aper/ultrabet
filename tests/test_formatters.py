@@ -65,8 +65,8 @@ def test_format_prediction_contains_titles():
     assert "Real" in text and "Barca" in text
     assert "Glicko-2" in text
     assert "ТОП-15 ПРОГНОЗОВ" in text
-    # раздел валуйных ставок удалён из отчёта
-    assert "ВАЛУЙНЫХ СТАВОК" not in text
+    # раздел EV-ставок удалён из отчёта
+    assert "EV СТАВОК" not in text
     assert "Бесплатных" in text and "*4*" in text
 
 
@@ -85,10 +85,10 @@ def test_format_prediction_includes_top_pick_block():
 
 def test_format_prediction_hides_odds_shows_fair_hint():
     """В отчёте не должно быть коэффициентов букмекера — только fair-кф
-    в подсказке о валуйности (1/p)."""
+    в подсказке о EV (1/p)."""
     text = format_prediction(_make_result(), free_left=0, bonus_left=0)
     assert "кф *" not in text  # коэффициенты скрыты
-    assert "ставка валуйна, если коэф" in text  # подсказка 1/p
+    assert "ставка EV, если коэф" in text  # подсказка 1/p
 
 
 def test_format_prediction_live_mode_compact():

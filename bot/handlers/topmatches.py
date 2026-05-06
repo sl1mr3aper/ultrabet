@@ -1,4 +1,4 @@
-"""Топ матчей дня — сортировка по валуйности при разумной вероятности.
+"""Топ матчей дня — сортировка по EV при разумной вероятности.
 
 Показываем 20 лучших прогнозов из предрасчёта. Сортировка — по
 композитному score из `core.value_engine` (EV × √p), фильтр —
@@ -51,7 +51,7 @@ def _render_match(idx: int, entry: dict) -> str:
         f"     {league}\n"
         f"     {label} · кф *{fair:.2f}*\n"
         f"     {icon} *{verdict}* · модель *{prob:.1f}%* · "
-        f"валуй *{ev:+.1f}%*"
+        f"EV *{ev:+.1f}%*"
     )
 
 
@@ -93,7 +93,7 @@ def _build_keyboard(
 
 
 def _collect_top_bets() -> list[dict]:
-    """Собрать топ прогнозов из кэша предрасчёта, сортировка по валуйности."""
+    """Собрать топ прогнозов из кэша предрасчёта, сортировка по EV."""
     precompute = services.topmatches_precompute
     if precompute is None:
         return []
@@ -131,7 +131,7 @@ def _collect_top_bets() -> list[dict]:
         #   3) при отсутствии «брать» fallback'ится на «осторожно».
         # На уровне ленты:
         #   - в выборку попадают только матчи, где есть пик «брать»,
-        #   - сортировка — по composite score (валуйность × √p).
+        #   - сортировка — по composite score (EV × √p).
         probs = getattr(result, "probabilities", None) or {}
         if not probs:
             continue
@@ -163,9 +163,9 @@ def _collect_top_bets() -> list[dict]:
         })
         seen_games.add(gid)
 
-    # Сортировка по composite score (валуйный И вероятный) — это и есть
+    # Сортировка по composite score (+EV И вероятный) — это и есть
     # то, что просит пользователь: «не самый высокий процент, а самый
-    # валуйный, при этом вероятная ставка».
+    # EV, при этом вероятная ставка».
     all_entries.sort(
         key=lambda e: (e.get("composite", 0.0), e.get("ev_pct", 0.0)),
         reverse=True,
@@ -209,7 +209,7 @@ async def _render_top(
         parts.append("")
         parts.append(
             f"_Стр. {page_index + 1}/{total_pages} · "
-            f"Топ-{len(top)} по валуйности при разумной вероятности_"
+            f"Топ-{len(top)} по EV при разумной вероятности_"
         )
 
     text = "\n".join(parts)

@@ -77,24 +77,28 @@ class Database:
     async def init_models(self) -> None:
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            # Лёгкая идемпотентная миграция для SQLite: добавляем колонки,
-            # появившиеся после первой инициализации БД, чтобы не ронять
-            # бот при апдейте кода без ручного `alembic upgrade`.
-            if self._url.startswith("sqlite"):
-                from sqlalchemy import text
+            # Лёгкая идемпотентная миграция: добавляем колонки, появившиеся
+            # после первой инициализации БД, чтобы не ронять бот при
+            # апдейте кода без ручного `alembic upgrade`.
+            #
+            # Карта таблица → список (column, type_sqlite, type_postgres).
+            # Для SQLite нужно проверять колонки через PRAGMA, для
+            # Postgres — через information_schema и `ADD COLUMN IF NOT
+            # EXISTS` (нативная поддержка с 9.6+).
+            soft_migrations: dict[str, list[tuple[str, str, str]]] = {
+                "users": [
+                    ("subscription_expired_notified_at", "DATETIME", "TIMESTAMP"),
+                ],
+                "prediction_outcomes": [
+                    ("closing_odds", "FLOAT", "DOUBLE PRECISION"),
+                    ("clv", "FLOAT", "DOUBLE PRECISION"),
+                    ("league_id", "BIGINT", "BIGINT"),
+                    ("market_category", "VARCHAR(32)", "VARCHAR(32)"),
+                ],
+            }
+            from sqlalchemy import text
 
-                # Карта таблица → список (column, sql_type) для добавления.
-                soft_migrations: dict[str, list[tuple[str, str]]] = {
-                    "users": [
-                        ("subscription_expired_notified_at", "DATETIME"),
-                    ],
-                    "prediction_outcomes": [
-                        ("closing_odds", "FLOAT"),
-                        ("clv", "FLOAT"),
-                        ("league_id", "BIGINT"),
-                        ("market_category", "VARCHAR(32)"),
-                    ],
-                }
+            if self._url.startswith("sqlite"):
                 for table_name, columns in soft_migrations.items():
                     try:
                         cols = await conn.execute(
@@ -102,10 +106,8 @@ class Database:
                         )
                         existing = {row[1] for row in cols.fetchall()}
                         if not existing:
-                            # Таблицы ещё нет — create_all создаст её
-                            # уже с нужной схемой; ALTER не нужен.
                             continue
-                        for col_name, col_type in columns:
+                        for col_name, col_type, _pg_type in columns:
                             if col_name not in existing:
                                 await conn.execute(
                                     text(
@@ -114,12 +116,30 @@ class Database:
                                     ),
                                 )
                                 logger.info(
-                                    "DB migration: added column {}.{}",
+                                    "DB migration (sqlite): added {}.{}",
                                     table_name, col_name,
                                 )
                     except Exception as exc:
                         logger.warning(
                             "Soft DB migration skipped for {}: {}",
+                            table_name, exc,
+                        )
+            elif self._url.startswith("postgres") or self._url.startswith(
+                "postgresql"
+            ):
+                for table_name, columns in soft_migrations.items():
+                    try:
+                        for col_name, _sqlite_type, pg_type in columns:
+                            await conn.execute(
+                                text(
+                                    f"ALTER TABLE {table_name} "
+                                    f"ADD COLUMN IF NOT EXISTS "
+                                    f"{col_name} {pg_type}",
+                                ),
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "Soft DB migration (postgres) skipped for {}: {}",
                             table_name, exc,
                         )
         logger.info("Database initialized at {}", self._url)

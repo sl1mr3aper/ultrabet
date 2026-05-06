@@ -363,7 +363,7 @@ async def cancel_cb(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "cancel:op")
 async def cancel_op_cb(callback: CallbackQuery, state: FSMContext) -> None:
-    """Останавливает долгую операцию (Топ дня, валуй-дня, поиск) и
+    """Останавливает долгую операцию (Топ дня, EV-дня, поиск) и
     возвращает пользователя в главное меню.
 
     Работает для любых прогресс-баров, которые заранее зарегистрировали

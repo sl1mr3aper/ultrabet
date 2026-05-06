@@ -1018,7 +1018,7 @@ async def _run_prediction(
             )
         )
 
-        # Трекаем топ-3 валуйные ставки в in-memory аналитике,
+        # Трекаем топ-3 EV-ставки в in-memory аналитике,
         # чтобы /admin_analytics показывал hit-rate и ROI по реальным пикам
         try:
             analytics = services.analytics

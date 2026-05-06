@@ -39,7 +39,11 @@ def main_menu_keyboard(*, is_admin: bool = False) -> InlineKeyboardMarkup:
             text=Buttons.ADMIN_PREDICTION_ANALYSIS,
             callback_data="admin:prediction_analysis",
         )
-        builder.adjust(1, 2, 1, 2, 1, 2, 1, 2)
+        builder.button(
+            text=Buttons.ADMIN_MODEL_ACCURACY,
+            callback_data="admin:model_accuracy",
+        )
+        builder.adjust(1, 2, 1, 2, 1, 2, 1, 2, 1)
     else:
         builder.adjust(1, 2, 1, 2, 1, 2, 1)
     return builder.as_markup()

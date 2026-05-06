@@ -6,9 +6,9 @@ from core.value_calculator import ValueCalculator
 
 
 def test_value_when_p_and_odds_ok():
-    # Дефолтный фильтр: p ≥ 0.35 (валуйный + вероятный), odds > 1.15
+    # Дефолтный фильтр: p ≥ 0.35 (EV + вероятный), odds > 1.51
     calc = ValueCalculator()
-    bet = calc.calculate(probability=0.92, actual_odds=1.20)
+    bet = calc.calculate(probability=0.70, actual_odds=1.60)
     assert bet.is_value
     assert bet.value_percent > 2.0
 
@@ -42,9 +42,10 @@ def test_suspicious_p_high_odds_high_rejected():
 
 def test_top_value_picks_highest_with_strict_filter():
     # Тест явно использует строгий порог 0.90, как было исторически.
+    # Дефолтный min_odds=1.51, поэтому ставим A=1.55, B=1.60, C=3.00.
     calc = ValueCalculator(min_probability=0.90)
     probs = {"A": 0.92, "B": 0.95, "C": 0.60}
-    odds = {"A": 1.20, "B": 1.30, "C": 3.00}
+    odds = {"A": 1.55, "B": 1.60, "C": 3.00}
     top = calc.find_top_value(probs, odds, top_n=5)
     # Только A и B проходят фильтр, C (p<0.9) отсекается
     assert len(top) == 2
@@ -52,10 +53,11 @@ def test_top_value_picks_highest_with_strict_filter():
 
 
 def test_top_value_picks_with_default_threshold():
-    # На дефолтном пороге p≥0.35 — все три проходят, сортировка по value_percent.
+    # На дефолтном пороге p≥0.35 и min_odds=1.51 — все три проходят
+    # (odds ≥ 1.55), сортировка по value_percent.
     calc = ValueCalculator()
-    probs = {"A": 0.92, "B": 0.95, "C": 0.60}
-    odds = {"A": 1.20, "B": 1.30, "C": 3.00}
+    probs = {"A": 0.70, "B": 0.65, "C": 0.50}
+    odds = {"A": 1.55, "B": 1.60, "C": 2.10}
     top = calc.find_top_value(probs, odds, top_n=5)
     assert len(top) == 3
     # Сортировка не возрастающая: первый ≥ остальных по value_percent.

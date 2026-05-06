@@ -33,6 +33,7 @@ from services.external_odds import (
 from services.odds_parser import OddsParser
 from services.pinnacle_odds import PinnacleOddsClient
 from services.self_learner import SelfLearner
+from services.understat_xg_provider import UnderstatXgProvider
 
 
 @dataclass(slots=True)
@@ -86,6 +87,7 @@ class PredictionService:
         nb_bet_client: NBBetClient | None = None,
         pinnacle_client: PinnacleOddsClient | None = None,
         external_odds_enabled: bool = True,
+        understat_xg_provider: UnderstatXgProvider | None = None,
     ) -> None:
         self._client = client
         self._value = value_calculator
@@ -94,6 +96,7 @@ class PredictionService:
         self._nb_bet_client = nb_bet_client
         self._pinnacle_client = pinnacle_client or PinnacleOddsClient()
         self._external_odds_enabled = external_odds_enabled
+        self._understat_xg_provider = understat_xg_provider
 
     async def predict(self, game_id: int | str) -> PredictionResult | None:
         bundle = await self._client.get_full_match_data(game_id)
@@ -222,6 +225,47 @@ class PredictionService:
                         continue
                 if _matches_sum > 0:
                     _league_avg_total = _goals_sum / _matches_sum
+
+        # P0-9: реальный xG из Understat (shot-based) — приоритетней,
+        # чем tanh-аппроксимация SStats. Берём только если у обеих команд
+        # ≥ 3 завершённых матча в team_xg_samples (иначе провайдер вернёт
+        # None и остаёмся на старой логике).
+        # Имена SStats нормализуются под Understat через team_name_alias.
+        understat_xg_used = False
+        if self._understat_xg_provider is not None:
+            try:
+                from services.team_name_alias import (
+                    league_to_understat_slug,
+                    to_understat,
+                )
+
+                _h_name = home.get("name") if isinstance(home, dict) else None
+                _a_name = away.get("name") if isinstance(away, dict) else None
+                if _h_name and _a_name:
+                    _h_understat = to_understat(str(_h_name))
+                    _a_understat = to_understat(str(_a_name))
+                    _league_slug = (
+                        league_to_understat_slug(_country_name or "")
+                        or league_to_understat_slug(
+                            (_league_obj or {}).get("name") or ""
+                        )
+                    )
+                    estimate = await self._understat_xg_provider.get_match_xg_estimate(
+                        home_team=_h_understat,
+                        away_team=_a_understat,
+                        league_slug=_league_slug,
+                        league_avg_total=_league_avg_total,
+                    )
+                    if estimate is not None:
+                        home_xg_api = float(estimate[0])
+                        away_xg_api = float(estimate[1])
+                        understat_xg_used = True
+                        logger.info(
+                            "understat xG: {} ({:.2f}) vs {} ({:.2f})",
+                            _h_understat, home_xg_api, _a_understat, away_xg_api,
+                        )
+            except Exception as exc:  # pragma: no cover - защитный блок
+                logger.debug("understat xG provider error: {}", exc)
 
         prediction: PredictionPayload = build_predictions(
             home_rating=home_rating,
@@ -585,6 +629,7 @@ class PredictionService:
                     if applied_adjustments
                     else {}
                 ),
+                **({"understat_xg_used": True} if understat_xg_used else {}),
             },
         )
 

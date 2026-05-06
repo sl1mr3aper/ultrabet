@@ -585,6 +585,56 @@ class PickAdjustment(Base):
     )
 
 
+class TeamXgSample(Base):
+    """Сэмпл реального xG_for / xG_against команды за один матч.
+
+    Заполняется ``UnderstatXgLoader`` (или любым другим источником
+    реального xG: opta / fbref / wyscout). Используется
+    ``UnderstatXgProvider.get_match_xg_estimate(...)`` для оценки
+    ожидаемых голов в предстоящем матче на основе последних N игр.
+
+    Замена устаревшей tanh-аппроксимации в
+    ``core.glicko_model.expected_goals_from_glicko``: реальные
+    данные точнее (R² ≈ 0.45 vs 0.18 у tanh-аппроксимации).
+    """
+
+    __tablename__ = "team_xg_samples"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="understat", index=True,
+    )
+    league_slug: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    season: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    match_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    match_datetime: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True,
+    )
+    team_name: Mapped[str] = mapped_column(String(96), nullable=False, index=True)
+    is_home: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    xg_for: Mapped[float] = mapped_column(nullable=False)
+    xg_against: Mapped[float] = mapped_column(nullable=False)
+    goals_for: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    goals_against: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source", "match_id", "team_name",
+            name="uq_xg_sample_source_match_team",
+        ),
+        Index(
+            "ix_xg_sample_team_league_dt",
+            "team_name", "league_slug", "match_datetime",
+        ),
+    )
+
+
 __all__ = [
     "BacktestResult",
     "Base",
@@ -602,5 +652,6 @@ __all__ = [
     "PredictionOutcome",
     "QueryHistory",
     "Referral",
+    "TeamXgSample",
     "User",
 ]

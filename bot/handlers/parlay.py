@@ -1,7 +1,7 @@
 """Команда /parlay — сборка и анализ экспресса.
 
 Формат: /parlay odd1 odd2 odd3 ... (просто перемножение)
-Или:   /parlay p1:o1 p2:o2 p3:o3 — с нашими вероятностями для расчёта валуйности.
+Или:   /parlay p1:o1 p2:o2 p3:o3 — с нашими вероятностями для расчёта EV.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ async def parlay_cmd(message: Message) -> None:
         await message.answer(
             "Использование:\n"
             "`/parlay 2.0 1.8 2.5` — просто коэфы\n"
-            "`/parlay 0.6:2.0 0.55:1.8` — вероятности:коэфы (для валуйности)",
+            "`/parlay 0.6:2.0 0.55:1.8` — вероятности:коэфы (для EV)",
             parse_mode="Markdown",
         )
         return
@@ -49,7 +49,7 @@ async def parlay_cmd(message: Message) -> None:
         f"Итоговый коэф: *{result.total_odds:.2f}*",
         f"Итоговая вероятность: *{result.combined_probability * 100:.2f}%*",
         f"КФ (1/p): *{result.fair_total_odds:.2f}*",
-        f"Валуйность: *{result.value_percent:+.2f}%*",
+        f"EV: *{result.value_percent:+.2f}%*",
         f"Риск: *{describe_risk(result)}*",
         "",
     ]

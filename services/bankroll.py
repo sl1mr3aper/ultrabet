@@ -6,7 +6,7 @@
 - fractional_kelly: 0.5 × Kelly — безопаснее.
 - martingale: удваиваем после каждого проигрыша (не рекомендуется, но бывает).
 - anti_martingale: удваиваем после каждого выигрыша (pyramiding).
-- percent: фиксированный процент банка, не зависит от валуйности.
+- percent: фиксированный процент банка, не зависит от EV.
 """
 
 from __future__ import annotations

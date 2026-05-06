@@ -1,4 +1,4 @@
-"""Daily picks — топ валуйных ставок дня (с пагинацией)."""
+"""Daily picks — топ EV-ставок дня (с пагинацией)."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def _render_pick(idx: int, p: DailyPick) -> str:
         f"     {market_label}\n"
         f"     модель {p.bet.probability * 100:.1f}% · "
         f"кф *{p.bet.fair_odds:.2f}* · "
-        f"валуй *+{p.bet.value_percent:.2f}%*"
+        f"EV *+{p.bet.value_percent:.2f}%*"
     )
 
 
@@ -173,9 +173,9 @@ async def _render(
                 await animator
             except (asyncio.CancelledError, Exception):
                 pass
-    title = header(f"Топ валуйных ставок на {today}", icon=ICON_TROPHY)
+    title = header(f"Топ EV-ставок на {today}", icon=ICON_TROPHY)
     if not picks:
-        msg = f"{title}\nСегодня валуйных вариантов не нашлось."
+        msg = f"{title}\nСегодня EV вариантов не нашлось."
         if isinstance(target, CallbackQuery):
             if target.message:
                 try:
@@ -194,7 +194,7 @@ async def _render(
         page,
         render_item=_render_pick,
         header_text=title,
-        footer_text="Формат: модель / КФ (1/p) / валуйность",
+        footer_text="Формат: модель / КФ (1/p) / EV",
     )
     builder = _build_keyboard(page)
     if isinstance(target, CallbackQuery):

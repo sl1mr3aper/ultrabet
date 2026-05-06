@@ -29,6 +29,11 @@ from config import Settings, get_settings
 from db.database import Database
 from services.analytics import AnalyticsService
 from services.external_odds import NBBetClient
+from services.observability import (
+    get_metrics,
+    init_sentry,
+    start_prometheus_server,
+)
 from services.self_learner import SelfLearner
 from utils.logger import setup_logging
 
@@ -46,12 +51,31 @@ async def _set_commands(bot: Bot) -> None:
 async def main() -> None:
     settings: Settings = get_settings()
     setup_logging(settings.log_level, settings.log_file)
+    # Observability: Sentry + Prometheus инициализируются "мягко" —
+    # если SDK / DSN не заданы, всё работает в no-op режиме без ошибок.
+    init_sentry(settings)
+    start_prometheus_server(settings)
+    metrics = get_metrics()
+    metrics.bot_started.inc()
     logger.info("Запускаю UltraBet, env={}", settings.bot_username)
 
     database = Database(settings.database_url)
     await database.init_models()
 
-    http = aiohttp.ClientSession()
+    # Оптимизированный HTTP-клиент: больше keepalive-коннекций, кэш DNS,
+    # увеличенный пул per-host (SStats — основной источник, его и грузим).
+    _connector = aiohttp.TCPConnector(
+        limit=200,            # общий пул коннекций
+        limit_per_host=50,    # на один хост (SStats)
+        ttl_dns_cache=600,    # 10 минут DNS-кэш
+        use_dns_cache=True,
+        keepalive_timeout=75, # дольше держим открытыми
+        enable_cleanup_closed=True,
+    )
+    http = aiohttp.ClientSession(
+        connector=_connector,
+        timeout=aiohttp.ClientTimeout(total=30, connect=10),
+    )
     cache = APICache()
     sstats = SStatsClient(
         http,
@@ -126,6 +150,14 @@ async def main() -> None:
         refresh_interval_seconds=3600,  # пересчёт раз в час
     )
 
+    # P0-9: общий провайдер реального xG из Understat (shot-based).
+    # Активен, если в `team_xg_samples` есть данные (заполняются через
+    # services.tasks.sync_understat_xg / scripts.sync_understat).
+    from services.understat_xg_provider import UnderstatXgProvider
+    _services.understat_xg_provider = UnderstatXgProvider(
+        session_factory=database.session_factory,
+    )
+
     def _build_prediction_service() -> Any:
         from core.value_calculator import ValueCalculator
         from services.odds_parser import OddsParser
@@ -136,6 +168,7 @@ async def main() -> None:
             odds_parser=OddsParser(),
             self_learner=_services.self_learner,
             nb_bet_client=_services.nb_bet_client,
+            understat_xg_provider=_services.understat_xg_provider,
         )
 
     _services.topmatches_precompute = TopMatchesPrecompute(
@@ -339,6 +372,25 @@ async def main() -> None:
                 logger.debug("standings-sync error: {}", exc)
             await asyncio.sleep(60 * 60)
 
+    async def _league_aggregates_loop() -> None:
+        # P0-fix: пересчёт avg_total / btts_rate / over_25_rate по лигам
+        # из MatchResult. Без этого все лиги в `LeagueAggregateService.get`
+        # падают на дефолт 2.65 и в отчётах «средний тотал лиги» одно и
+        # то же число для всех турниров. Считаем сразу при старте и
+        # дальше раз в 6 часов.
+        try:
+            n = await _services.league_aggregates.recompute_all()  # type: ignore[union-attr]
+            logger.info("LeagueAggregateService warm-up: {} лиг", n)
+        except Exception as exc:
+            logger.warning("LeagueAggregateService warm-up failed: {}", exc)
+        while True:
+            await asyncio.sleep(6 * 3600)
+            try:
+                n = await _services.league_aggregates.recompute_all()  # type: ignore[union-attr]
+                logger.info("LeagueAggregateService periodic: {} лиг", n)
+            except Exception as exc:
+                logger.warning("LeagueAggregateService periodic failed: {}", exc)
+
     learning_task = asyncio.create_task(_self_learning_loop())
     backfill_task = asyncio.create_task(_history_backfill_loop())
     resolver_task = asyncio.create_task(_resolver_loop())
@@ -346,6 +398,7 @@ async def main() -> None:
     warmer_task = asyncio.create_task(_cache_warmer_loop())
     precompute_task = asyncio.create_task(_topmatches_precompute_loop())
     standings_task = asyncio.create_task(_standings_sync_loop())
+    league_agg_task = asyncio.create_task(_league_aggregates_loop())
     # PickAdjustmentCache: фоновый refresh-loop читает таблицу
     # `pick_adjustments` (заполняется SecondaryPickCalibrator'ом
     # в self-learning loop) и обновляет in-memory словарь.
@@ -363,6 +416,7 @@ async def main() -> None:
     warmer_task.cancel()
     precompute_task.cancel()
     standings_task.cancel()
+    league_agg_task.cancel()
     if _services.pick_adjustments is not None:
         await _services.pick_adjustments.stop()
 

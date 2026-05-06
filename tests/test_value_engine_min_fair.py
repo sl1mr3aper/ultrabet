@@ -1,4 +1,4 @@
-"""Тесты для новых порогов value_engine: MIN_PROB_TAKE 0.45, MIN_FAIR_ODDS 1.30."""
+"""Тесты для новых порогов value_engine: MIN_PROB_TAKE 0.45, MIN_FAIR_ODDS 1.51."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from core.value_engine import (
 
 
 def test_min_fair_odds_blocks_high_prob() -> None:
-    """При p > 1/1.30 ≈ 0.77 → fair < 1.30 → не брать (даже если EV > 0)."""
-    score = score_pick(market_key="home", probability=0.85, odds=1.20)
+    """При p > 1/1.51 ≈ 0.66 → fair < 1.51 → не брать (даже если EV > 0)."""
+    score = score_pick(market_key="home", probability=0.75, odds=1.40)
     assert score.fair_odds < MIN_FAIR_ODDS
     assert score.verdict == "не брать"
     assert score.accept is False

@@ -29,6 +29,20 @@ from services.history_backfill import _extract_score
 from services.market_resolver import resolve_market
 
 
+def _unwrap_game(payload: Any) -> dict[str, Any] | None:
+    """SStats `/Games/{id}` возвращает `{"game": {...}, "statistics": ...,
+    "lineups": ..., ...}`. А `/Games/list` — плоский dict игры.
+    Здесь приводим оба формата к единому виду — флэт-словарь игры —
+    чтобы `_extract_score` / `_upsert_result` работали единообразно.
+    """
+    if not isinstance(payload, dict):
+        return None
+    inner = payload.get("game")
+    if isinstance(inner, dict):
+        return inner
+    return payload
+
+
 class PredictionsResolver:
     """Резолвит pending PredictionOutcome → hit/miss + сохраняет счёт."""
 
@@ -88,11 +102,12 @@ class PredictionsResolver:
                 if gid in existing and existing[gid].home_score is not None:
                     continue
                 try:
-                    game_obj = await self._client.get_game(gid)
+                    raw = await self._client.get_game(gid)
                 except Exception as exc:
                     logger.debug("resolver: get_game({}) failed: {}", gid, exc)
                     continue
-                if not isinstance(game_obj, dict):
+                game_obj = _unwrap_game(raw)
+                if game_obj is None:
                     continue
                 home_score = _extract_score(game_obj, "home")
                 away_score = _extract_score(game_obj, "away")
@@ -159,14 +174,15 @@ class PredictionsResolver:
             if existing is not None and existing.home_score is not None:
                 return True
             try:
-                game_obj = await self._client.get_game(int(game_id))
+                raw = await self._client.get_game(int(game_id))
             except Exception as exc:
                 logger.debug(
                     "ensure_match_result: get_game({}) failed: {}",
                     game_id, exc,
                 )
                 return False
-            if not isinstance(game_obj, dict):
+            game_obj = _unwrap_game(raw)
+            if game_obj is None:
                 return False
             home_score = _extract_score(game_obj, "home")
             away_score = _extract_score(game_obj, "away")
@@ -213,13 +229,14 @@ class PredictionsResolver:
             )
             if existing is None or existing.home_score is None:
                 try:
-                    game_obj = await self._client.get_game(int(game_id))
+                    raw = await self._client.get_game(int(game_id))
                 except Exception as exc:
                     logger.debug(
                         "resolver: get_game({}) failed: {}", game_id, exc,
                     )
                     return 0
-                if not isinstance(game_obj, dict):
+                game_obj = _unwrap_game(raw)
+                if game_obj is None:
                     return 0
                 home_score = _extract_score(game_obj, "home")
                 away_score = _extract_score(game_obj, "away")

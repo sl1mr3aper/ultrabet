@@ -20,7 +20,7 @@
 | 11 | Glicko недоступен → сообщение «попробуйте позже или в день матча» | `bot/formatters.py` | +4 / −1 |
 | 12 | Бейдж `(↑ модель X%)` теперь отображается при дельте регулятора ≥ 0.3 пп (раньше требовалось ≥ 1 пп и 5 матчей истории) | `bot/formatters.py` | +6 / −6 |
 | 13 | Главное меню: убраны упоминания «прогнозы от 85%», текст упрощён | `bot/texts.py` | +6 / −7 |
-| 14 | О боте: убраны «команда: UltraBet Labs», английские термины (Ensemble, Season-table, last-games-stats, fair-кф). Формула валуйности оформлена красиво. Добавлено «🌐 Язык: русский» | `bot/handlers/main_menu.py` | +14 / −22 |
+| 14 | О боте: убраны «команда: UltraBet Labs», английские термины (Ensemble, Season-table, last-games-stats, fair-кф). Формула EV оформлена красиво. Добавлено «🌐 Язык: русский» | `bot/handlers/main_menu.py` | +14 / −22 |
 | 15 | Настройки: убран список команд (`/strategy`, `/bankroll`, `/notify`, `/tz`, `/lang`). Управление — кнопками | `bot/handlers/main_menu.py` | +1 / −7 |
 | 16 | Подписка: с кнопок убрано `(40/день)`, формат `🎟 1 день · 50 ⭐`. В тексте тарифов и в описании инвойса — единое «До 40 отчётов в день на период: X» | `bot/keyboards.py`, `bot/handlers/main_menu.py`, `bot/handlers/subscription.py` | +6 / −9 |
 | 17 | CSV-подпись: английские названия `(game / odds / injuries / last games / profits / season table)` заменены на русские | `bot/handlers/predictions.py` | +2 / −2 |

@@ -1,4 +1,4 @@
-"""Подтверждаем сортировку value bets по убыванию валуйности и наличие fair."""
+"""Подтверждаем сортировку value bets по убыванию EV и наличие fair."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from core.value_calculator import ValueCalculator
 
 
 def test_find_top_value_sorted_desc():
-    # Используем высокие p, чтобы пройти новый фильтр (p ≥ 0.90)
+    # Используем нормальные p и odds ≥ 1.51 (новый дефолт min_odds)
     calc = ValueCalculator(min_value_percent=0.0)
-    probs = {"a": 0.92, "b": 0.95, "c": 0.98}
-    odds = {"a": 1.20, "b": 1.25, "c": 1.30}
+    probs = {"a": 0.65, "b": 0.60, "c": 0.55}
+    odds = {"a": 1.60, "b": 1.75, "c": 1.95}
     out = calc.find_top_value(probs, odds, top_n=10)
     assert len(out) >= 1
     for prev, nxt in pairwise(out):

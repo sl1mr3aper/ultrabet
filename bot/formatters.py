@@ -127,7 +127,7 @@ def _ev_of(prob: float, odd: float | None) -> float:
 def _pick_top_one(
     result: PredictionResult,
 ) -> tuple[str, float, float | None, str | None] | None:
-    """Выбирает «главный прогноз» — рынок с максимальной валуйностью (EV).
+    """Выбирает «главный прогноз» — рынок с максимальным EV.
 
     Отбор:
     - `0 < p ≤ 0.85` (отсекаем «перегретые» вероятности);
@@ -135,21 +135,21 @@ def _pick_top_one(
     - при равенстве EV или при отсутствии кфа — тай-брейк вероятностью.
 
     В отчёте сами кфы не отображаются, но для упорядочивания пиков они
-    нужны (иначе получается «ТМ 3.5 73 %» раньше, чем валуйные рынки).
+    нужны (иначе получается «ТМ 3.5 73 %» раньше, чем EV рынки).
     Если у всех кандидатов нет кфа — деградирует в чистую сортировку
     по вероятности.
     """
     from core.value_engine import MIN_FAIR_ODDS
 
-    max_p_for_top = 1.0 / MIN_FAIR_ODDS  # ≈ 0.769
+    max_p_for_top = 1.0 / MIN_FAIR_ODDS  # ≈ 0.662 (для MIN_FAIR_ODDS=1.51)
 
     odds_map = getattr(result, "odds_map", None) or {}
     candidates: list[tuple[str, float, float | None]] = []
     for k, p in result.probabilities.items():
-        # Глобальный фильтр кф ≥ 1.30: главный прогноз не должен иметь
-        # честный кф меньше 1.30 (фактически — это запрет «брать»
-        # P1 при 87% или ИТМ 2.5 при 85%, как видно в CSV-отчётах
-        # и в ответе пользователя про «че это за говно где от 1.3»).
+        # Глобальный фильтр кф ≥ 1.51: главный прогноз не должен иметь
+        # честный кф меньше 1.51. Запрет «брать» очевидных ставок типа
+        # П1 при 87% или ИТМ 2.5 при 85% — у них слишком маленькая
+        # возможность заработать (требование пользователя).
         if not (0.0 < p <= max_p_for_top):
             continue
         odd_raw = odds_map.get(k)
@@ -218,11 +218,11 @@ def _fair_odd(prob: float) -> float | None:
 
 
 def _value_hint(prob: float) -> str:
-    """Возвращает текст «(ставка валуйна, если коэф > X.XX)» для отчёта."""
+    """Возвращает текст «(ставка EV, если коэф > X.XX)» для отчёта."""
     fair = _fair_odd(prob)
     if fair is None:
         return ""
-    return f"  _(ставка валуйна, если коэф > {fair:.2f})_"
+    return f"  _(ставка EV, если коэф > {fair:.2f})_"
 
 
 def _format_kelly_line(prob: float, odd: float | None) -> str | None:
@@ -239,7 +239,7 @@ def _format_kelly_line(prob: float, odd: float | None) -> str | None:
         fair = _fair_odd(prob)
         if fair is None:
             return None
-        use_odd = fair * 1.05  # подразумеваем 5% над честным КФ — порог валуйности
+        use_odd = fair * 1.05  # подразумеваем 5% над честным КФ — порог EV
     try:
         si = StakeInput(
             bankroll=10000.0,
@@ -699,7 +699,7 @@ def format_prediction(
     daily_quota: int | None = None,
     is_admin: bool = False,
 ) -> str:
-    del top_value  # раздел валуйных ставок удалён из отчёта
+    del top_value  # раздел EV-ставок удалён из отчёта
     home = result.home_name
     away = result.away_name
 
@@ -793,15 +793,15 @@ def format_prediction(
         return "\n".join(parts)
 
     # ── Стандартный отчёт (прематч / сыгранный) ─────────────
-    # Сортируем по ВАЛУЙНОСТИ (EV = p·odd − 1) в убывающем порядке.
-    # Потолок вероятности `MAX_PROB_FOR_TOP` (≈0.769 = 1/1.30) — отсекаем
-    # «перегретые» рынки, у которых честный кф < 1.30. Это глобальный
-    # фильтр кф ≥ 1.30, требуемый ТЗ: пользователь не должен видеть в
-    # ТОПе пиков с кф 1.18 (и ставку с EV ≈ нулевой ROI).
+    # Сортируем по EV (EV = p·odd − 1) в убывающем порядке.
+    # Потолок вероятности `MAX_PROB_FOR_TOP` (≈0.662 = 1/1.51) — отсекаем
+    # «перегретые» рынки, у которых честный кф < 1.51. Это глобальный
+    # фильтр кф ≥ 1.51, требуемый ТЗ: пользователь не должен видеть в
+    # ТОПе пиков с кф 1.30-1.50 (минимум profit-margin для пользователя).
     # Если у рынка нет кфа — EV считаем равным 0 и рынок уходит в
-    # низ сортировки (но всё ещё виден, если валуйных не хватает).
+    # низ сортировки (но всё ещё виден, если EV не хватает).
     from core.value_engine import MIN_FAIR_ODDS
-    MAX_PROB_FOR_TOP = 1.0 / MIN_FAIR_ODDS  # ≈ 0.769
+    MAX_PROB_FOR_TOP = 1.0 / MIN_FAIR_ODDS  # ≈ 0.662
 
     odds_map_for_sort = getattr(result, "odds_map", None) or {}
 

@@ -1,7 +1,7 @@
-"""Поиск валуйных ставок по соотношению вероятность × коэфф.
+"""Поиск EV-ставок по соотношению вероятность × коэфф.
 
 Честный коэффициент = 1 / вероятность.
-Валуйность = (вероятность × коэфф - 1) × 100%.
+EV = (вероятность × коэфф - 1) × 100%.
 Критерий Келли = (b*p - q) / b, где b = коэфф - 1, p = вер-ть, q = 1-p.
 """
 
@@ -16,7 +16,7 @@ class ValueBet:
     probability: float
     actual_odds: float
     fair_odds: float       # честный коэфф = 1 / probability
-    value_percent: float   # валуйность в %
+    value_percent: float   # EV в %
     is_value: bool
     kelly_fraction: float = 0.0      # доля Келли (0..1)
     half_kelly_fraction: float = 0.0  # пол-Келли
@@ -34,12 +34,12 @@ def _kelly_fraction(prob: float, odds: float) -> float:
 
 
 class ValueCalculator:
-    """Расчёт валуйности: честный_кф = 1/p, валуй = p*кф - 1."""
+    """Расчёт EV: честный_кф = 1/p, EV = p*кф - 1."""
 
     def __init__(
         self,
         *,
-        min_odds: float = 1.15,
+        min_odds: float = 1.51,
         min_value_percent: float = 2.0,
         min_probability: float = 0.35,
     ) -> None:
@@ -54,7 +54,7 @@ class ValueCalculator:
             return ValueBet(market_key, prob, odds, 0.0, -100.0, False, 0.0, 0.0)
         # Честный коэффициент
         fair = 1.0 / prob
-        # Валуйность
+        # EV
         value_percent = (prob * odds - 1.0) * 100.0
         # Келли
         kelly = _kelly_fraction(prob, odds)
