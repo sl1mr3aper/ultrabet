@@ -13,8 +13,10 @@ if TYPE_CHECKING:
     from config import Settings
     from services.ai_refiner import GeminiRefiner
     from services.analytics import AnalyticsService
+    from services.betfair_client import BetfairClient
     from services.cache_warmer import CacheWarmer
     from services.calibration_service import CalibrationService
+    from services.clv_tracker import ClvTracker
     from services.history_backfill import HistoryBackfillService
     from services.kv_cache import KVCache
     from services.league_aggregate_service import LeagueAggregateService
@@ -42,6 +44,11 @@ class _Services:
     # чтобы применить эмпирические adjustment_factor'ы. Заполняется
     # фоновым refresh-loop'ом раз в час.
     pick_adjustments: PickAdjustmentCache | None = None
+    # Betfair Exchange API: sharp-money источник + CLV-метрика.
+    # Активен, если в .env заданы BETFAIR_APP_KEY + (USERNAME+PASSWORD)
+    # либо cert paths.
+    betfair_client: BetfairClient | None = None
+    clv_tracker: ClvTracker | None = None
 
 
 services = _Services()

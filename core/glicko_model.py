@@ -91,6 +91,36 @@ def get_home_advantage(
     return HOME_ADVANTAGE_DEFAULT
 
 
+def calibrate_home_advantage_from_winrate(home_win_rate: float) -> float:
+    """Восстановить home_advantage (ELO) из наблюдаемой `home_win_rate`.
+
+    Логика: при равных рейтингах P(home_win) = e_home * (1 − p_draw), где
+    p_draw ≈ 0.27 при closeness=1 → 0.378. Решаем уравнение
+        home_win_rate ≈ e_home * 0.622
+        e_home ≈ home_win_rate / 0.622
+        home_advantage = 400 * log10(e_home / (1 − e_home))
+
+    Зажимаем результат в [10, 200] чтобы экстремальные выборки маленьких
+    лиг не ломали модель. Возвращает HOME_ADVANTAGE_DEFAULT при некорректных
+    входных значениях.
+    """
+    if not 0.10 <= home_win_rate <= 0.85:
+        return HOME_ADVANTAGE_DEFAULT
+    e_home = home_win_rate / 0.622
+    if not 0.05 < e_home < 0.95:
+        return HOME_ADVANTAGE_DEFAULT
+    try:
+        ha = 400.0 * math.log10(e_home / (1.0 - e_home))
+    except (ValueError, ZeroDivisionError):
+        return HOME_ADVANTAGE_DEFAULT
+    return max(10.0, min(200.0, ha))
+
+
+def get_all_league_home_advantages() -> dict[int, float]:
+    """Снимок текущих per-league home_advantage (для админ-панели/отчёта)."""
+    return dict(_LEAGUE_HOME_ADVANTAGE)
+
+
 def _q() -> float:
     return math.log(10) / 400.0
 
@@ -153,7 +183,9 @@ def expected_goals_from_glicko(
 
 
 __all__ = [
+    "calibrate_home_advantage_from_winrate",
     "expected_goals_from_glicko",
+    "get_all_league_home_advantages",
     "get_home_advantage",
     "glicko_outcome_probs",
     "set_league_home_advantage",

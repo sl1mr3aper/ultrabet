@@ -29,6 +29,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import BacktestResult, MatchResult, PredictionOutcome
 
 
+def _aware(dt: datetime | None) -> datetime | None:
+    """SQLite иногда возвращает naive datetime — нормализуем к UTC.
+
+    Используется во всех сравнениях `evaluated_at >= cutoff`. Без этого
+    self-learning loop падает с «can't compare offset-naive and
+    offset-aware datetimes».
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
+
+
 @dataclass(slots=True)
 class CalibrationBin:
     lower: float
@@ -183,8 +197,10 @@ class SelfLearner:
                     cv = clv_stat.setdefault(o.market_key, [0.0, 0.0])
                     cv[0] += 1
                     cv[1] += clv_val
-                # Holdout (последние 14 дней)
-                if o.evaluated_at and o.evaluated_at >= holdout_cutoff:
+                # Holdout (последние 14 дней) — нормализуем datetime,
+                # т.к. SQLite иногда возвращает naive.
+                _eval = _aware(o.evaluated_at)
+                if _eval is not None and _eval >= holdout_cutoff:
                     holdout_n += 1
                     holdout_brier_before += (p - y) ** 2
                     # Применяем текущую калибровку (если есть) и считаем «после»

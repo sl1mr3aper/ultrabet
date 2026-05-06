@@ -158,6 +158,63 @@ async def main() -> None:
         session_factory=database.session_factory,
     )
 
+    # P0-6 / P0-8: Betfair Exchange API + CLV-tracker.
+    # Активны только при заполненных credentials (App Key + (user/pwd | cert)).
+    # Без них модель работает на SStats данных, CLV не считается.
+    if settings.betfair_enabled:
+        from services.betfair_client import BetfairClient
+        from services.clv_tracker import (
+            ClvTracker,
+            DynamicBetfairMarketResolver,
+        )
+        bf_client = BetfairClient(
+            session=http,
+            app_key=settings.betfair_app_key_value or "",
+            username=settings.betfair_username_value,
+            password=settings.betfair_password_value,
+            cert_pem_path=settings.betfair_cert_pem_path,
+            cert_key_path=settings.betfair_cert_key_path,
+        )
+        try:
+            await bf_client.login()
+            _services.betfair_client = bf_client
+            # Resolver через listEvents/listMarketCatalogue + БД для match
+            # lookup (game_id → home/away/start_dt берём из MatchResult).
+            from sqlalchemy import select as _select
+
+            from db.models import MatchResult
+
+            async def _match_lookup(
+                game_id: int,
+            ) -> tuple[str, str, Any] | None:
+                """Возвращает (home_name, away_name, start_datetime) или None."""
+                async with database.session_factory() as _s:
+                    row = await _s.scalar(
+                        _select(MatchResult).where(
+                            MatchResult.game_id == game_id,
+                        )
+                    )
+                if row is None or not row.home_name or not row.away_name:
+                    return None
+                return (row.home_name, row.away_name, row.date)
+
+            resolver = DynamicBetfairMarketResolver(
+                betfair=bf_client,
+                match_lookup=_match_lookup,
+            )
+            _services.clv_tracker = ClvTracker(
+                betfair=bf_client,
+                resolver=resolver,
+                session_factory=database.session_factory,
+            )
+            logger.info("Betfair Exchange + CLV tracker enabled")
+        except Exception as exc:
+            logger.warning("Betfair login/init failed (CLV отключен): {}", exc)
+            _services.betfair_client = None
+            _services.clv_tracker = None
+    else:
+        logger.info("Betfair Exchange отключён (нет credentials в .env)")
+
     def _build_prediction_service() -> Any:
         from core.value_calculator import ValueCalculator
         from services.odds_parser import OddsParser
@@ -399,6 +456,20 @@ async def main() -> None:
     precompute_task = asyncio.create_task(_topmatches_precompute_loop())
     standings_task = asyncio.create_task(_standings_sync_loop())
     league_agg_task = asyncio.create_task(_league_aggregates_loop())
+
+    # CLV capture loop: снимает closing line каждую минуту для pending пиков.
+    # Запускается только если Betfair successful logged in.
+    clv_task: asyncio.Task[None] | None = None
+    if _services.clv_tracker is not None:
+        from services.clv_tracker import run_clv_capture_loop
+        clv_task = asyncio.create_task(
+            run_clv_capture_loop(
+                tracker=_services.clv_tracker,
+                session_factory=database.session_factory,
+                interval_seconds=60.0,
+            )
+        )
+        logger.info("CLV capture loop запущен (interval=60s)")
     # PickAdjustmentCache: фоновый refresh-loop читает таблицу
     # `pick_adjustments` (заполняется SecondaryPickCalibrator'ом
     # в self-learning loop) и обновляет in-memory словарь.
@@ -417,8 +488,15 @@ async def main() -> None:
     precompute_task.cancel()
     standings_task.cancel()
     league_agg_task.cancel()
+    if clv_task is not None:
+        clv_task.cancel()
     if _services.pick_adjustments is not None:
         await _services.pick_adjustments.stop()
+    if _services.betfair_client is not None:
+        try:
+            await _services.betfair_client.logout()
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Betfair logout error: {}", exc)
 
     logger.info("Завершаю работу...")
     await dispatcher.stop_polling()

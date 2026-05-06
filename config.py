@@ -86,6 +86,19 @@ class Settings(BaseSettings):
     backup_s3_bucket: str | None = Field(default=None)
     backup_s3_prefix: str = Field("ultrabet")
 
+    # ── Betfair Exchange API (опционально, для CLV-tracking) ─
+    # Без этих credentials Betfair-интеграция отключается gracefully —
+    # модель работает на SStats данных, CLV не считается.
+    # Если заполнены — клиент логинится при старте и пишет closing line
+    # в `pinnacle_closing_odds` (название историческое, теперь Betfair).
+    betfair_app_key: SecretStr | None = Field(default=None)
+    betfair_username: SecretStr | None = Field(default=None)
+    betfair_password: SecretStr | None = Field(default=None)
+    betfair_cert_pem_path: str | None = Field(default=None)
+    betfair_cert_key_path: str | None = Field(default=None)
+    # Минут до старта матча, когда снимаем closing line.
+    betfair_close_capture_minutes: int = Field(15, ge=1, le=120)
+
     @field_validator("admin_ids", mode="before")
     @classmethod
     def _parse_admin_ids(cls, value: object) -> list[int]:
@@ -123,6 +136,37 @@ class Settings(BaseSettings):
             return None
         secret = self.sentry_dsn.get_secret_value().strip()
         return secret or None
+
+    @property
+    def betfair_app_key_value(self) -> str | None:
+        if self.betfair_app_key is None:
+            return None
+        v = self.betfair_app_key.get_secret_value().strip()
+        return v or None
+
+    @property
+    def betfair_username_value(self) -> str | None:
+        if self.betfair_username is None:
+            return None
+        v = self.betfair_username.get_secret_value().strip()
+        return v or None
+
+    @property
+    def betfair_password_value(self) -> str | None:
+        if self.betfair_password is None:
+            return None
+        v = self.betfair_password.get_secret_value().strip()
+        return v or None
+
+    @property
+    def betfair_enabled(self) -> bool:
+        """True если есть достаточно credentials для логина в Betfair."""
+        if not self.betfair_app_key_value:
+            return False
+        # Cert-based auth ИЛИ password-based.
+        has_cert = bool(self.betfair_cert_pem_path and self.betfair_cert_key_path)
+        has_pwd = bool(self.betfair_username_value and self.betfair_password_value)
+        return has_cert or has_pwd
 
     def ensure_dirs(self) -> None:
         (PROJECT_ROOT / "data").mkdir(parents=True, exist_ok=True)

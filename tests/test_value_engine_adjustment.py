@@ -85,18 +85,19 @@ def test_score_pick_factor_changes_verdict() -> None:
 
 def test_select_best_pick_uses_adjustment_map() -> None:
     """select_best_pick применяет adjustment_map через score_pick."""
-    probs = {"home": 0.51, "draw": 0.30, "away": 0.19}
+    # p=0.60, odds=2.10 → EV=26%, выше MIN_PROB_TAKE и MIN_VALUE_PCT_TAKE
+    probs = {"home": 0.60, "draw": 0.25, "away": 0.15}
     odds = {"home": 2.10, "draw": 3.20, "away": 4.50}
-    # без adjustment: home — главный кандидат
+    # без adjustment: home — главный кандидат, verdict="брать"
     no_adj = select_best_pick(probs, odds)
     assert no_adj is not None
     assert no_adj.market_key == "home"
+    assert no_adj.verdict == "брать"
 
-    # С adjustment 0.7 для home → home теряет верд иктдвинуть
+    # С adjustment 0.7 для home → p=0.42, EV отрицательный → не брать
     adj_map = {"home": 0.7}
     with_adj = select_best_pick(probs, odds, adjustment_map=adj_map)
-    # home теперь p=0.357, EV отрицательный → не брать
-    # ни draw, ни away не пройдут MIN_PROB_TAKE → None
+    # home теперь p=0.42, EV ≈ −12% → не брать.
+    # Других пиков с verdict="брать" нет → None.
     if with_adj is not None:
-        # Если что-то выбрано — точно не home c verdict=брать
         assert with_adj.market_key != "home" or with_adj.verdict != "брать"

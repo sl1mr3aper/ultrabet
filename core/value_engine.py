@@ -192,7 +192,7 @@ def select_best_pick(
     odds_map: dict[str, float] | None = None,
     *,
     accept_only: bool = True,
-    fallback_to_caution: bool = True,
+    fallback_to_caution: bool = False,
     market_filter: object | None = None,
     adjustment_map: dict[str, float] | None = None,
 ) -> PickScore | None:

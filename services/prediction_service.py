@@ -192,10 +192,14 @@ class PredictionService:
         try:
             from bot.context import services as _ctx
 
-            _agg_svc = getattr(_ctx, "league_aggregates", None)
+            _agg_svc = _ctx.league_aggregates
             if _agg_svc is not None and _league_id is not None:
-                _stats = await _agg_svc.get(_league_id)
-                if not _stats.is_default:
+                _stats = await _agg_svc.get(_league_id, country=_country_name)
+                # Используем агрегат если он не дефолтный, ИЛИ если is_default
+                # помечен потому что это country/global fallback (n_matches > 0).
+                # Это покрывает ВСЕ лиги: даже новые/неизвестные получают
+                # разумный league_avg_total через каскад country → global.
+                if _stats.n_matches > 0:
                     _league_avg_total = float(_stats.avg_total)
                     _league_btts_rate = float(_stats.btts_rate)
                     _league_n_matches = int(_stats.n_matches)
